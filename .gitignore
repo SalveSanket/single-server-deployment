@@ -1,0 +1,41 @@
+# Local .terraform directories
+.terraform/
+
+# Terraform state files
+*.tfstate
+*.tfstate.*
+
+# Crash log files
+crash.log
+
+# Exclude CLI configuration files
+.terraformrc
+terraform.rc
+
+# Terraform variable override files (can contain secrets)
+*.tfvars
+*.tfvars.json
+
+# Sensitive files or envs
+*.env
+.env*
+
+# Ignore backup files
+*.backup
+*.bak
+
+# Ignore lock file (optional, but usually safe to ignore)
+.terraform.lock.hcl
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS system files
+.DS_Store
+
+# SSH keys (be careful!)
+*.pem
+*.key
