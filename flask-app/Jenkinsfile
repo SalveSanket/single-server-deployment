@@ -1,0 +1,31 @@
+pipeline {
+    agent any
+
+    environment {
+        PATH = "/var/lib/jenkins/.local/bin:${env.PATH}"
+    }
+
+    stages {
+        stage('Setup') {
+            steps {
+                sh 'pip3 install --user -r requirements.txt'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                sh 'pytest'
+            }
+        }
+
+        stage('Deployment') {
+            input {
+                message "Do you want to proceed further?"
+                ok "Yes"
+            }
+            steps {
+                echo "Running Deployment"
+            }
+        }
+    }
+}
