@@ -1,36 +1,48 @@
+
 locals {
+  # Mapping of AMI types to default SSH usernames
   default_users = {
-    "ubuntu"        = "ubuntu"
-    "amazon"        = "ec2-user"
-    "centos"        = "centos"
-    "debian"        = "admin"
-    "rhel"          = "ec2-user"
-    "suse"          = "ec2-user"
-    "al2023"        = "ec2-user"
+    "ubuntu"  = "ubuntu"
+    "amzn"    = "ec2-user"
+    "centos"  = "centos"
+    "debian"  = "admin"
+    "rhel"    = "ec2-user"
+    "suse"    = "ec2-user"
+    "al2023"  = "ec2-user"
   }
 
+  # AMI name fetched from the AMI data source
   ami_name = data.aws_ami.Amazon_AMI.name
 
+  # Determine the appropriate username based on AMI name
   ec2_default_user = (
-    contains(local.ami_name, "ubuntu") ? local.default_users["ubuntu"] :
-    contains(local.ami_name, "amzn")   ? local.default_users["amazon"] :
-    contains(local.ami_name, "centos") ? local.default_users["centos"] :
-    contains(local.ami_name, "debian") ? local.default_users["debian"] :
-    contains(local.ami_name, "rhel")   ? local.default_users["rhel"] :
-    contains(local.ami_name, "suse")   ? local.default_users["suse"] :
-    contains(local.ami_name, "al2023") ? local.default_users["al2023"] :
-    "ubuntu"
+    can(regex("ubuntu", local.ami_name))  ? local.default_users["ubuntu"]  :
+    can(regex("amzn", local.ami_name))    ? local.default_users["amzn"]    :
+    can(regex("centos", local.ami_name))  ? local.default_users["centos"]  :
+    can(regex("debian", local.ami_name))  ? local.default_users["debian"]  :
+    can(regex("rhel", local.ami_name))    ? local.default_users["rhel"]    :
+    can(regex("suse", local.ami_name))    ? local.default_users["suse"]    :
+    can(regex("al2023", local.ami_name))  ? local.default_users["al2023"]  :
+    "ubuntu" # Default fallback
   )
 }
 
+# Output the AMI name and default SSH username
 output "jenkins_instance_public_ip" {
-  value = aws_instance.jenkins_instance.public_ip
+  description = "Public IP address of the Jenkins EC2 instance"
+  value       = aws_instance.jenkins_instance.public_ip
+}
+output "default_ec2_username" {
+  description = "Default SSH username based on AMI type"
+  value       = local.ec2_default_user
 }
 
 output "ssh_connection_string" {
-  value = "ssh -i ~/.ssh/${var.key_pair_name}.pem ${local.ec2_default_user}@${aws_instance.jenkins_instance.public_ip}"
+  description = "SSH command to access the Jenkins server"
+  value       = "ssh -i ~/.ssh/${var.key_pair_name}.pem ${local.ec2_default_user}@${aws_instance.jenkins_instance.public_ip}"
 }
 
 output "jenkins_url" {
-  value = "http://${aws_instance.jenkins_instance.public_ip}:8080"
+  description = "Jenkins Web UI URL"
+  value       = "http://${aws_instance.jenkins_instance.public_ip}:8080"
 }
