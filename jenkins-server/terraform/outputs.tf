@@ -39,7 +39,7 @@ output "default_ec2_username" {
 
 output "ssh_connection_string" {
   description = "SSH command to access the Jenkins server"
-  value       = "ssh -i ~/.ssh/${var.key_pair_name}.pem ${local.ec2_default_user}@${aws_instance.jenkins_instance.public_ip}"
+  value       = "ssh -i ${var.private_key_file} ${local.ec2_default_user}@${aws_instance.jenkins_instance.public_ip}"
 }
 
 output "jenkins_url" {
