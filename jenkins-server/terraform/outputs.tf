@@ -46,3 +46,8 @@ output "jenkins_url" {
   description = "Jenkins Web UI URL"
   value       = "http://${aws_instance.jenkins_instance.public_ip}:8080"
 }
+
+output "private_key_file" {
+  description = "Path to the private key used for SSH"
+  value       = var.private_key_file
+}
