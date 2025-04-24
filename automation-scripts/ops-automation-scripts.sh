@@ -100,7 +100,7 @@ while true; do
     fi
   fi
 
-  echo -e "\n✅ Operation complete."
+  echo -e "✅ Operation complete."
   echo ""
   read -p "Would you like to perform another operation? (yes/no): " AGAIN
 
