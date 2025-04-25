@@ -10,8 +10,8 @@
 
 set -e  # Exit on error
 
-# Resolve project root (assuming this script lives in /automation-scripts/)
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# Resolve project root (assuming this script lives in /jenkins-server/automation-scripts/)
+ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 TERRAFORM_DIR="$ROOT_DIR/jenkins-server/terraform"
 SCRIPTS_DIR="$ROOT_DIR/jenkins-server/system-setup-scripts"
 REMOTE_DIR_NAME="system-setup-scripts"
@@ -56,7 +56,8 @@ fi
 
 # Perform secure copy
 echo "[INFO] Copying directory to remote server..."
-scp -i "$PRIVATE_KEY" -r "$SCRIPTS_DIR" "$SSH_USER@$PUBLIC_IP:~/"
+ssh -i "$PRIVATE_KEY" "$SSH_USER@$PUBLIC_IP" "mkdir -p ~/jenkins-server"
+scp -i "$PRIVATE_KEY" -r "$SCRIPTS_DIR" "$SSH_USER@$PUBLIC_IP:~/jenkins-server/"
 
 echo ""
-echo "✅ Successfully copied '$REMOTE_DIR_NAME' to $SSH_USER@$PUBLIC_IP"
+echo "✅ Successfully copied '$REMOTE_DIR_NAME' to ~/jenkins-server on $SSH_USER@$PUBLIC_IP"

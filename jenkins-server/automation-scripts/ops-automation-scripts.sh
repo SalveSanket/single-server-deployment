@@ -11,7 +11,7 @@
 set -e
 
 # Define paths
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 TERRAFORM_DIR="$ROOT_DIR/jenkins-server/terraform"
 LOCAL_SCRIPTS_DIR="$ROOT_DIR/jenkins-server/system-setup-scripts"
 REMOTE_DIR="system-setup-scripts"
