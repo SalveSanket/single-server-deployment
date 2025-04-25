@@ -1,12 +1,17 @@
 #!/bin/bash
 
 # ------------------------------------------
-# Production-Ready Script to Copy System Setup Scripts
+# Production-Ready Script to Copy System Setup Scripts with Logging
 # ------------------------------------------
-# This script locates Terraform outputs for an AWS EC2 instance
-# and securely copies the system-setup-scripts directory from
-# jenkins-server/ to the remote EC2 instance.
+# This script locates Terraform outputs for an AWS EC2 instance,
+# copies the system-setup-scripts directory to the remote instance,
+# ensures all scripts are executable, runs updates.sh first (if present),
+# and then runs all remaining .sh scripts in order.
+# Logs every action to a file for auditing.
 # ------------------------------------------
+
+LOG_FILE="/var/log/automation-scripts.log"  # Define your log file path
+exec > >(tee -a "$LOG_FILE") 2>&1  # Redirect both stdout and stderr to the log file
 
 set -e  # Exit on error
 
@@ -15,6 +20,9 @@ ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 TERRAFORM_DIR="$ROOT_DIR/jenkins-server/terraform"
 SCRIPTS_DIR="$ROOT_DIR/jenkins-server/system-setup-scripts"
 REMOTE_DIR_NAME="system-setup-scripts"
+
+# Log the start of the script
+echo "[INFO] Starting script execution at $(date)"
 
 # Check if Terraform and scripts directories exist
 if [ ! -d "$TERRAFORM_DIR" ]; then
@@ -54,10 +62,31 @@ if [[ "$CONFIRM" != "yes" ]]; then
   exit 0
 fi
 
-# Perform secure copy
-echo "[INFO] Copying directory to remote server..."
-ssh -i "$PRIVATE_KEY" "$SSH_USER@$PUBLIC_IP" "mkdir -p ~/jenkins-server"
-scp -i "$PRIVATE_KEY" -r "$SCRIPTS_DIR" "$SSH_USER@$PUBLIC_IP:~/jenkins-server/"
+# Copy the directory
+echo "[INFO] Copying directory to remote server home (~)..."
+ssh -i "$PRIVATE_KEY" "$SSH_USER@$PUBLIC_IP" "rm -rf ~/$REMOTE_DIR_NAME && mkdir -p ~/$REMOTE_DIR_NAME"
+scp -i "$PRIVATE_KEY" -r "$SCRIPTS_DIR" "$SSH_USER@$PUBLIC_IP:~/"
+
+# Remote execution block
+echo "[INFO] Setting permissions and executing scripts on remote server..."
+ssh -i "$PRIVATE_KEY" "$SSH_USER@$PUBLIC_IP" bash <<EOF
+  set -e
+  cd ~/$REMOTE_DIR_NAME
+
+  if [ -f "updates.sh" ]; then
+    chmod +x updates.sh
+    echo "[INFO] Running updates.sh..."
+    ./updates.sh
+  else
+    echo "[WARNING] updates.sh not found. Skipping..."
+  fi
+
+  for script in \$(ls -1 *.sh 2>/dev/null | grep -v '^updates.sh$'); do
+    chmod +x "\$script"
+    echo "[INFO] Executing \$script..."
+    "./\$script"
+  done
+EOF
 
 echo ""
-echo "✅ Successfully copied '$REMOTE_DIR_NAME' to ~/jenkins-server on $SSH_USER@$PUBLIC_IP"
+echo "✅ Successfully copied '$REMOTE_DIR_NAME' and executed scripts on $SSH_USER@$PUBLIC_IP"
