@@ -1,0 +1,13 @@
+Logging to /Users/sanketsalve/Documents/devops_projects/single-server-deployment/automation.log
+The following files from '/Users/sanketsalve/Documents/devops_projects/single-server-deployment/prod-server/system-setup-scripts' will be copied to the remote server at '/tmp':
+
+  - /Users/sanketsalve/Documents/devops_projects/single-server-deployment/prod-server/system-setup-scripts/*
+
+Do you want to copy these files to the remote server? (yes/no): Copying files to ubuntu@34.226.203.83:/tmp
+ubuntu@34.226.203.83: Permission denied (publickey).
+rsync(82816): error: unexpected end of file
+rsync(82816): error: io_read_nonblocking
+rsync(82816): error: io_read_buf
+rsync(82816): error: io_read_int
+rsync(82816): warning: child 82817 exited with status 255
+ERROR: Failed to copy system-setup-scripts to the server.
