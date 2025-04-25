@@ -12,8 +12,8 @@ trap 'printf "[ERROR] Script failed unexpectedly at line %s.\n" "$LINENO"' ERR
 
 # Define paths
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-TERRAFORM_DIR="$ROOT_DIR/terraform"
-LOCAL_SCRIPTS_DIR="$ROOT_DIR/system-setup-scripts"
+TERRAFORM_DIR="$ROOT_DIR/jenkins-server/terraform"
+LOCAL_SCRIPTS_DIR="$ROOT_DIR/jenkins-server/system-setup-scripts"
 REMOTE_DIR="system-setup-scripts"
 
 # Validate Terraform directory
@@ -77,6 +77,14 @@ while true; do
         if [[ -f "$FULL_PATH" ]]; then
           eval "$SCP_CMD \"$FULL_PATH\" $SSH_USER@$PUBLIC_IP:~/$REMOTE_DIR/"
           printf "[INFO] File uploaded.\n"
+          # Ensure file is executable on remote
+          eval "$SSH_CMD 'chmod +x ~/$REMOTE_DIR/$FILE'"
+          # Ask user if they want to execute the uploaded script
+          read -rp "Do you want to execute this script? (yes/no): " EXECUTE
+          if [[ "$EXECUTE" == "yes" ]]; then
+            eval "$SSH_CMD 'bash ~/$REMOTE_DIR/$FILE'"
+            printf "[INFO] Script executed successfully.\n"
+          fi
         else
           printf "[ERROR] File not found: %s\n" "$FULL_PATH"
         fi
