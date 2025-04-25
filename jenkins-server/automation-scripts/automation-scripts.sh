@@ -3,7 +3,7 @@
 # -----------------------------------------------------------------------------
 # Script: automation-scripts.sh
 # Description:
-#   Production-ready script to deploy system setup scripts to an AWS EC2 instance.
+#   script to deploy system setup scripts to an AWS EC2 instance.
 #   - Uses Terraform outputs to fetch EC2 public IP, SSH user, and key.
 #   - Copies system-setup-scripts to the remote EC2 instance.
 #   - Executes updates.sh (if present) and all other shell scripts.
