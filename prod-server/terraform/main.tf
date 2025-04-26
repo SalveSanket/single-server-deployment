@@ -92,6 +92,6 @@ resource "aws_instance" "prodserver_instance" {
   associate_public_ip_address = true
 
   tags = {
-    Name = "prodserver-production-instance"
+    Name = "prod-instance"
   }
 }
