@@ -23,7 +23,24 @@ error_exit() {
 }
 
 # --------------------------------------------
-# Spinner function for background tasks
+# Confirmations and Checks
+# --------------------------------------------
+check_exists() {
+    if [ ! -e "$1" ]; then
+        error_exit "$2 not found at $1!"
+    fi
+}
+
+ask_confirmation() {
+    read -r -p "$1 (yes/no): " response
+    if [[ "$response" != "yes" ]]; then
+        warn "Operation cancelled by the user."
+        exit 0
+    fi
+}
+
+# --------------------------------------------
+# Spinner for background tasks
 # --------------------------------------------
 spinner() {
     local pid=$1
@@ -45,36 +62,46 @@ spinner() {
 trap 'tput cnorm' EXIT
 
 # --------------------------------------------
-# Function to check if a file or directory exists
+# Remote command execution
 # --------------------------------------------
-check_exists() {
-    if [ ! -e "$1" ]; then
-        error_exit "$2 not found at $1!"
-    fi
-}
+run_remote_command() {
+    ssh -tt -i "$PRIVATE_KEY_PATH" "$DEFAULT_SSH_USER@$PROD_SERVER_IP" "bash -c '
+        set -e
+        cd ~/$REMOTE_DIR_NAME
+        echo -e \"[INFO] Changed directory to ~/$REMOTE_DIR_NAME\"
 
-# --------------------------------------------
-# Function to ask user for confirmation
-# --------------------------------------------
-ask_confirmation() {
-    read -r -p "$1 (yes/no): " response
-    if [[ "$response" != "yes" ]]; then
-        info "Operation cancelled by the user."
+        chmod +x *.sh 2>/dev/null || echo -e \"[WARN] No .sh files found to make executable.\"
+        echo -e \"[SUCCESS] Made all .sh files executable.\"
+
+        if [ -f updates.sh ]; then
+            echo -e \"[INFO] Running updates.sh...\"
+            ./updates.sh
+            echo -e \"[SUCCESS] Finished running updates.sh.\"
+        else
+            echo -e \"[WARN] updates.sh not found, skipping.\"
+        fi
+
+        for script in *.sh; do
+            if [ \"\$script\" != \"updates.sh\" ] && [ -x \"\$script\" ]; then
+                echo -e \"[INFO] Running \$script...\"
+                ./\$script
+                echo -e \"[SUCCESS] Finished running \$script.\"
+            fi
+        done
+
+        echo -e \"[INFO] All scripts executed. Exiting remote session...\"
         exit 0
-    fi
+    '"
 }
 
 # --------------------------------------------
-# Resolve project root directory dynamically
+# Start of Script Execution
 # --------------------------------------------
 echo "------------------------"
 info "Resolving project root directory..."
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 success "Project root directory resolved to $ROOT_DIR"
 
-# --------------------------------------------
-# Define paths
-# --------------------------------------------
 echo "------------------------"
 info "Defining paths..."
 TERRAFORM_DIR="$ROOT_DIR/prod-server/terraform"
@@ -84,9 +111,6 @@ PRIVATE_KEY_PATH="${PRIVATE_KEY_PATH:-$HOME/.ssh/ProdKey}"
 PUBLIC_KEY_PATH="${PUBLIC_KEY_PATH:-$HOME/.ssh/ProdKey.pub}"
 success "Paths defined."
 
-# --------------------------------------------
-# Check prerequisites
-# --------------------------------------------
 echo "------------------------"
 info "Checking prerequisites..."
 for path in "$TERRAFORM_DIR" "$SYSTEM_SETUP_DIR" "$PRIVATE_KEY_PATH" "$PUBLIC_KEY_PATH"; do
@@ -98,9 +122,6 @@ for cmd in terraform scp ssh; do
 done
 success "All prerequisites are met."
 
-# --------------------------------------------
-# Fetch Terraform output values
-# --------------------------------------------
 echo "------------------------"
 info "Fetching Terraform output values..."
 PROD_SERVER_IP=$(terraform -chdir="$TERRAFORM_DIR" output -raw prodserver_public_ip)
@@ -111,9 +132,6 @@ DEFAULT_SSH_USER=$(terraform -chdir="$TERRAFORM_DIR" output -raw default_ssh_use
 [ -z "$DEFAULT_SSH_USER" ] && error_exit "default_ssh_user output is missing!"
 success "Terraform output values fetched."
 
-# --------------------------------------------
-# Show what will be copied
-# --------------------------------------------
 echo "------------------------"
 info "The following files from '$SYSTEM_SETUP_DIR' will be copied to the remote server under the home directory (~/$REMOTE_DIR_NAME):"
 echo ""
@@ -125,7 +143,7 @@ echo ""
 ask_confirmation "Proceed with copying files?"
 
 # --------------------------------------------
-# Prepare remote target directory
+# Prepare remote directory
 # --------------------------------------------
 echo "------------------------"
 info "Ensuring remote directory ~/$REMOTE_DIR_NAME exists..."
@@ -142,17 +160,24 @@ info "Copying files to ~$REMOTE_DIR_NAME on remote server..."
 scp -i "$PRIVATE_KEY_PATH" -o StrictHostKeyChecking=accept-new -r "$SYSTEM_SETUP_DIR/"* "$DEFAULT_SSH_USER@$PROD_SERVER_IP:~/$REMOTE_DIR_NAME/" &
 pid=$!
 spinner $pid || error_exit "File copy failed."
-success "Files successfully copied to $DEFAULT_SSH_USER@$PROD_SERVER_IP:~/$REMOTE_DIR_NAME"
+success "Files successfully copied."
 
 # --------------------------------------------
-# Final SSH confirmation
+# Final confirmation
 # --------------------------------------------
 echo "------------------------"
 info "Final SSH confirmation..."
-ssh -i "$PRIVATE_KEY_PATH" "$DEFAULT_SSH_USER@$PROD_SERVER_IP" << 'EOF' &
-    echo "✅ System setup files have been copied to your home directory successfully."
+ssh -i "$PRIVATE_KEY_PATH" "$DEFAULT_SSH_USER@$PROD_SERVER_IP" << 'EOF'
+echo "✅ System setup files have been copied to your home directory successfully."
 EOF
-pid=$!
-spinner $pid
+success "Automation setup completed."
 
-success "Automation completed successfully. 🚀"
+# --------------------------------------------
+# Execute remote scripts
+# --------------------------------------------
+echo "------------------------"
+info "Running scripts on remote server..."
+run_remote_command &
+pid=$!
+spinner $pid || error_exit "Failed to execute scripts remotely."
+success "All scripts executed successfully on remote server."
