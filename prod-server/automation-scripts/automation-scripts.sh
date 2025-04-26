@@ -1,91 +1,103 @@
 #!/bin/bash
 
-# Function to display error messages and exit the script
-function error_exit {
-    echo "ERROR: $1"
+set -e  # Exit immediately if a command exits with a non-zero status
+
+# --------------------------------------------
+# Function to display error messages and exit
+# --------------------------------------------
+error_exit() {
+    echo "ERROR: $1" >&2
     exit 1
 }
 
+# --------------------------------------------
 # Function to check if a file or directory exists
-function check_exists {
+# --------------------------------------------
+check_exists() {
     if [ ! -e "$1" ]; then
         error_exit "$2 not found at $1!"
     fi
 }
 
-# Function to ask user for confirmation to proceed
-function ask_confirmation {
-    read -p "$1 (yes/no): " response
+# --------------------------------------------
+# Function to ask user for confirmation
+# --------------------------------------------
+ask_confirmation() {
+    read -r -p "$1 (yes/no): " response
     if [[ "$response" != "yes" ]]; then
         echo "Operation cancelled by the user."
         exit 0
     fi
 }
 
+# --------------------------------------------
 # Resolve project root directory dynamically
+# --------------------------------------------
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 
-# Define paths for important directories and files
+# --------------------------------------------
+# Define paths
+# --------------------------------------------
 TERRAFORM_DIR="$ROOT_DIR/prod-server/terraform"
 SYSTEM_SETUP_DIR="$ROOT_DIR/prod-server/system-setup-scripts"
 REMOTE_DIR_NAME="system-setup-scripts"
 PRIVATE_KEY_PATH="${PRIVATE_KEY_PATH:-$HOME/.ssh/ProdKey}"
 PUBLIC_KEY_PATH="${PUBLIC_KEY_PATH:-$HOME/.ssh/ProdKey.pub}"
 
-# --------------------------------------------------------------
-# Check if the required directories and files exist
-# --------------------------------------------------------------
-check_exists "$TERRAFORM_DIR" "Terraform directory"
-check_exists "$SYSTEM_SETUP_DIR" "System setup scripts directory"
-check_exists "$PRIVATE_KEY_PATH" "Private key"
-check_exists "$PUBLIC_KEY_PATH" "Public key"
+# --------------------------------------------
+# Check prerequisites
+# --------------------------------------------
+for path in "$TERRAFORM_DIR" "$SYSTEM_SETUP_DIR" "$PRIVATE_KEY_PATH" "$PUBLIC_KEY_PATH"; do
+    check_exists "$path" "$(basename "$path")"
+done
 
-# --------------------------------------------------------------
-# Fetch Terraform output values (from output.tf)
-# --------------------------------------------------------------
+# Check required commands exist
+for cmd in terraform scp ssh; do
+    command -v "$cmd" >/dev/null 2>&1 || error_exit "$cmd command not found. Please install it."
+done
+
+# --------------------------------------------
+# Fetch Terraform output values
+# --------------------------------------------
 PROD_SERVER_IP=$(terraform -chdir="$TERRAFORM_DIR" output -raw prodserver_public_ip)
 PROD_SERVER_URL=$(terraform -chdir="$TERRAFORM_DIR" output -raw prodserver_url)
 DEFAULT_SSH_USER=$(terraform -chdir="$TERRAFORM_DIR" output -raw default_ssh_user)
 
-# Ensure Terraform outputs are valid
-if [ -z "$PROD_SERVER_IP" ] || [ -z "$DEFAULT_SSH_USER" ]; then
-    error_exit "Terraform output did not provide necessary values!"
-fi
+# Validate outputs
+[ -z "$PROD_SERVER_IP" ] && error_exit "prodserver_public_ip output is missing!"
+[ -z "$DEFAULT_SSH_USER" ] && error_exit "default_ssh_user output is missing!"
 
-# --------------------------------------------------------------
-# Show the files that will be copied and ask for user confirmation
-# --------------------------------------------------------------
-echo "The following files from '$SYSTEM_SETUP_DIR' will be copied to the remote server at '/tmp':"
+# --------------------------------------------
+# Show what will be copied
+# --------------------------------------------
+echo "The following files from '$SYSTEM_SETUP_DIR' will be copied to the remote server under the home directory (~/$REMOTE_DIR_NAME):"
 echo ""
 for file in "$SYSTEM_SETUP_DIR"/*; do
-    echo "  - $file"
+    echo "  - $(basename "$file")"
 done
 echo ""
 
-# Ask for user confirmation before proceeding
-ask_confirmation "Do you want to copy these files to the remote server?"
+ask_confirmation "Proceed with copying files?"
 
-# --------------------------------------------------------------
-# Perform the file copy operation
-# --------------------------------------------------------------
-echo "Copying files to $DEFAULT_SSH_USER@$PROD_SERVER_IP:/tmp"
-scp -i "$PRIVATE_KEY_PATH" -r "$SYSTEM_SETUP_DIR" "$DEFAULT_SSH_USER@$PROD_SERVER_IP:/tmp" || error_exit "Failed to copy system-setup-scripts to the server."
+# --------------------------------------------
+# Prepare remote target directory
+# --------------------------------------------
+echo "Ensuring remote directory ~/$REMOTE_DIR_NAME exists..."
+ssh -i "$PRIVATE_KEY_PATH" -o StrictHostKeyChecking=accept-new "$DEFAULT_SSH_USER@$PROD_SERVER_IP" "mkdir -p ~/$REMOTE_DIR_NAME" || error_exit "Failed to create directory on remote server."
 
-echo "Successfully copied system-setup-scripts to $PROD_SERVER_IP:/tmp"
+# --------------------------------------------
+# Copy files
+# --------------------------------------------
+echo "Copying files to ~$REMOTE_DIR_NAME on remote server..."
+scp -i "$PRIVATE_KEY_PATH" -o StrictHostKeyChecking=accept-new -r "$SYSTEM_SETUP_DIR/"* "$DEFAULT_SSH_USER@$PROD_SERVER_IP:~/$REMOTE_DIR_NAME/" || error_exit "File copy failed."
 
-# --------------------------------------------------------------
-# SSH into the remote server and display a confirmation message
-# --------------------------------------------------------------
+echo "Files successfully copied to $DEFAULT_SSH_USER@$PROD_SERVER_IP:~/$REMOTE_DIR_NAME"
+
+# --------------------------------------------
+# Final SSH confirmation
+# --------------------------------------------
 ssh -i "$PRIVATE_KEY_PATH" "$DEFAULT_SSH_USER@$PROD_SERVER_IP" << 'EOF'
-    echo "System setup directory has been copied. No setup.sh script to run."
+    echo "✅ System setup files have been copied to your home directory successfully."
 EOF
 
-# Check if SSH execution was successful
-if [ $? -ne 0 ]; then
-    error_exit "SSH execution failed."
-fi
-
-# --------------------------------------------------------------
-# Final success message
-# --------------------------------------------------------------
-echo "Automation completed successfully."
+echo "Automation completed successfully. 🚀"
