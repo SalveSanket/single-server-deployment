@@ -55,6 +55,8 @@ spinner() {
     tput cnorm  # show cursor
 }
 
+trap 'tput cnorm' EXIT
+
 # --------------------------------------------
 # Detect OS and Info
 # --------------------------------------------
