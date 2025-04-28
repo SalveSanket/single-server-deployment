@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # --------------------------------------------
-# Color functions for output
+# Color and Output Formatting
 # --------------------------------------------
 info() {
     echo -e "\033[1;34m[INFO]\033[0m $1"
@@ -22,8 +22,16 @@ error_exit() {
     exit 1
 }
 
+section() {
+    echo ""
+    echo -e "\033[1;33m========================================"
+    echo "     $1"
+    echo -e "========================================\033[0m"
+    echo ""
+}
+
 # --------------------------------------------
-# Spinner function
+# Spinner Animation
 # --------------------------------------------
 spinner() {
     local pid=$1
@@ -45,18 +53,7 @@ spinner() {
 trap 'tput cnorm' EXIT
 
 # --------------------------------------------
-# Section header
-# --------------------------------------------
-section() {
-    echo ""
-    echo -e "\033[1;33m========================================"
-    echo "     $1"
-    echo -e "========================================\033[0m"
-    echo ""
-}
-
-# --------------------------------------------
-# Retry function
+# Retry Safe Command Execution
 # --------------------------------------------
 retry_command() {
     local retries=3
@@ -75,7 +72,7 @@ retry_command() {
 }
 
 # --------------------------------------------
-# Start of Script
+# Script Execution Starts Here
 # --------------------------------------------
 
 section "Detecting System Information"
@@ -96,41 +93,37 @@ info "Current User        : $CURRENT_USER"
 info "Hostname            : $HOSTNAME"
 
 # --------------------------------------------
-# Install Python3 and Pip3 based on OS
+# Install Python and Pip
 # --------------------------------------------
 section "Installing Python and Pip"
 
 case "$DISTRO" in
     ubuntu|debian)
         info "Updating apt package index..."
-        retry_command bash -c "sudo apt update -y &"
+        retry_command sudo apt update -y &
         spinner $!
-
         info "Installing python3 and pip3..."
-        retry_command bash -c "sudo apt install -y python3 python3-pip &"
+        retry_command sudo apt install -y python3 python3-pip python3-venv &
         spinner $!
         ;;
     centos|rhel|rocky)
         info "Updating yum package index..."
-        retry_command bash -c "sudo yum update -y &"
+        retry_command sudo yum update -y &
         spinner $!
-
         info "Installing python3 and pip3..."
-        retry_command bash -c "sudo yum install -y python3 python3-pip &"
+        retry_command sudo yum install -y python3 python3-pip &
         spinner $!
         ;;
     amzn)
         info "Updating yum package index..."
-        retry_command bash -c "sudo yum update -y &"
+        retry_command sudo yum update -y &
         spinner $!
-
         info "Installing python3..."
-        retry_command bash -c "sudo yum install -y python3 &"
+        retry_command sudo yum install -y python3 &
         spinner $!
-
         if ! command -v pip3 &> /dev/null; then
             info "Installing pip3 manually..."
-            retry_command bash -c "sudo python3 -m ensurepip --upgrade &"
+            retry_command sudo python3 -m ensurepip --upgrade &
             spinner $!
         fi
         ;;
@@ -139,26 +132,42 @@ case "$DISTRO" in
         ;;
 esac
 
+success "Python3 and Pip3 installation completed."
+
 # --------------------------------------------
-# Final checks
+# Setup Project Directory
 # --------------------------------------------
+section "Setting up Project Directory"
 
-section "Verifying Installation"
+APP_DIR="/home/$CURRENT_USER/app"
 
-PYTHON_VERSION=$(python3 --version 2>/dev/null || echo "Not Found")
-PIP_VERSION=$(pip3 --version 2>/dev/null || echo "Not Found")
+info "Creating application directory at: $APP_DIR"
+mkdir -p "$APP_DIR" || error_exit "Failed to create application directory."
+success "Directory created: $APP_DIR"
 
-if [[ "$PYTHON_VERSION" == "Not Found" ]]; then
-    error_exit "Python3 installation failed!"
-else
-    success "Python3 Installed: $PYTHON_VERSION"
-fi
+cd "$APP_DIR" || error_exit "Failed to move into application directory."
+success "Moved into directory: $APP_DIR"
 
-if [[ "$PIP_VERSION" == "Not Found" ]]; then
-    error_exit "Pip3 installation failed!"
-else
-    success "Pip3 Installed: $PIP_VERSION"
-fi
+# --------------------------------------------
+# Create Python Virtual Environment
+# --------------------------------------------
+section "Creating Python Virtual Environment"
 
+info "Creating virtual environment 'venv/'"
+python3 -m venv venv || error_exit "Failed to create virtual environment."
+
+success "Virtual environment created successfully at $APP_DIR/venv"
+
+# --------------------------------------------
+# Final Success Message
+# --------------------------------------------
 section "Python Environment Setup Completed Successfully 🚀"
-success "System is ready with Python3 and Pip3!"
+
+success "✅ Python3 and Pip3 installed."
+success "✅ Application directory ready at $APP_DIR."
+success "✅ Virtual environment created at $APP_DIR/venv."
+
+echo ""
+info "To activate your virtual environment later, run:"
+echo -e "\033[1;32m source $APP_DIR/venv/bin/activate \033[0m"
+echo ""
