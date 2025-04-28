@@ -31,7 +31,7 @@ section() {
 }
 
 # --------------------------------------------
-# Spinner Animation
+# Spinner for background tasks
 # --------------------------------------------
 spinner() {
     local pid=$1
@@ -102,7 +102,7 @@ case "$DISTRO" in
         info "Updating apt package index..."
         retry_command sudo apt update -y &
         spinner $!
-        info "Installing python3 and pip3..."
+        info "Installing python3, pip3, venv..."
         retry_command sudo apt install -y python3 python3-pip python3-venv &
         spinner $!
         ;;
@@ -155,19 +155,97 @@ section "Creating Python Virtual Environment"
 
 info "Creating virtual environment 'venv/'"
 python3 -m venv venv || error_exit "Failed to create virtual environment."
-
-success "Virtual environment created successfully at $APP_DIR/venv"
+success "Virtual environment created at $APP_DIR/venv"
 
 # --------------------------------------------
-# Final Success Message
+# Install Flask inside venv
 # --------------------------------------------
-section "Python Environment Setup Completed Successfully 🚀"
+section "Installing Flask in Virtual Environment"
+
+info "Activating virtual environment and installing Flask..."
+source venv/bin/activate
+retry_command pip install --upgrade pip
+retry_command pip install flask
+deactivate
+success "Flask installed successfully inside virtual environment."
+
+# --------------------------------------------
+# Create Sample app.py (if not exists)
+# --------------------------------------------
+section "Creating Sample Flask Application"
+
+if [ ! -f "$APP_DIR/app.py" ]; then
+    info "Creating sample app.py..."
+    cat <<EOF > app.py
+from flask import Flask
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "Hello, Flask World!"
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
+EOF
+    success "Sample app.py created."
+else
+    warn "app.py already exists, skipping creation."
+fi
+
+# --------------------------------------------
+# Create systemd service for Flask app
+# --------------------------------------------
+section "Creating flaskapp.service for systemd"
+
+cat <<EOF | sudo tee /etc/systemd/system/flaskapp.service
+[Unit]
+Description=Flask Web Application
+After=network.target
+
+[Service]
+User=$CURRENT_USER
+Group=$CURRENT_USER
+WorkingDirectory=$APP_DIR
+Environment="PATH=$APP_DIR/venv/bin"
+ExecStart=$APP_DIR/venv/bin/python $APP_DIR/app.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+success "flaskapp.service created at /etc/systemd/system/"
+
+# --------------------------------------------
+# Reload systemd and start the service
+# --------------------------------------------
+section "Starting flaskapp.service"
+
+info "Reloading systemd daemon..."
+retry_command sudo systemctl daemon-reload &
+spinner $!
+
+info "Enabling flaskapp.service to start on boot..."
+retry_command sudo systemctl enable flaskapp.service &
+spinner $!
+
+info "Starting flaskapp.service now..."
+retry_command sudo systemctl start flaskapp.service &
+spinner $!
+
+success "Flask app service is up and running."
+
+# --------------------------------------------
+# Final Success
+# --------------------------------------------
+section "Deployment Completed Successfully 🚀"
 
 success "✅ Python3 and Pip3 installed."
-success "✅ Application directory ready at $APP_DIR."
-success "✅ Virtual environment created at $APP_DIR/venv."
+success "✅ Flask installed."
+success "✅ Application created at $APP_DIR."
+success "✅ Systemd service running: flaskapp.service"
 
 echo ""
-info "To activate your virtual environment later, run:"
-echo -e "\033[1;32m source $APP_DIR/venv/bin/activate \033[0m"
+info "You can check your app at: http://<your-server-ip>:5000"
 echo ""
