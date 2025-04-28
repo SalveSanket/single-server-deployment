@@ -2,29 +2,62 @@ pipeline {
     agent any
 
     environment {
-        PATH = "/var/lib/jenkins/.local/bin:${env.PATH}"
+        SERVER_IP = credentials('prod-server-ip')
     }
 
     stages {
-        stage('Setup') {
+        stage('Install Python Packages') {
             steps {
-                sh 'pip3 install --user -r requirements.txt'
+                dir('flask-app') {
+                    sh 'pip3 install --user -r requirements.txt'
+                }
             }
         }
 
-        stage('Test') {
+        stage('Run Tests') {
             steps {
-                sh 'pytest'
+                dir('flask-app') {
+                    sh 'pytest'
+                }
             }
         }
 
-        stage('Deployment') {
-            input {
-                message "Do you want to proceed further?"
-                ok "Yes"
-            }
+        stage('Package Flask App') {
             steps {
-                echo "Running Deployment"
+                dir('flask-app') {
+                    sh '''
+                        echo "Packaging flask-app contents..."
+                        zip -r flaskapp.zip ./* -x "*.git*" "*.venv*" "myenv/*" "Jenkinsfile" "steps.sh" "tasks.txt" "flask.service"
+                        ls -lart
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy to Production Server') {
+            steps {
+                withCredentials([sshUserPrivateKey(credentialsId: 'ssh-key', keyFileVariable: 'MY_SSH_KEY', usernameVariable: 'USERNAME')]) {
+                    sh '''
+                        echo "Deploying flask-app to Production Server..."
+                        scp -i $MY_SSH_KEY -o StrictHostKeyChecking=no flask-app/flaskapp.zip $USERNAME@$SERVER_IP:/home/$USERNAME/
+
+                        ssh -i $MY_SSH_KEY -o StrictHostKeyChecking=no $USERNAME@$SERVER_IP << EOF
+                            set -e
+                            echo "Unzipping flaskapp.zip into /home/$USERNAME/app/..."
+                            mkdir -p /home/$USERNAME/app
+                            unzip -o /home/$USERNAME/flaskapp.zip -d /home/$USERNAME/app/
+
+                            echo "Activating virtual environment and installing dependencies..."
+                            cd /home/$USERNAME/app
+                            source venv/bin/activate
+                            pip install -r requirements.txt
+
+                            echo "Restarting flaskapp.service..."
+                            sudo systemctl restart flaskapp.service
+                            echo "Deployment completed successfully."
+                        EOF
+                    '''
+                }
             }
         }
     }
