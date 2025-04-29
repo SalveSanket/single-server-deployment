@@ -12,7 +12,6 @@ pipeline {
                     sh '''
                         echo "Installing Python packages..."
                         pip3 install --user -r requirements.txt
-                        export PATH=$HOME/.local/bin:$PATH
                     '''
                 }
             }
@@ -35,8 +34,7 @@ pipeline {
                 dir('flask-app') {
                     sh '''
                         echo "Packaging flask-app contents..."
-                        zip -r flaskapp.zip . -x "*.git*" "*.venv*" "myenv/*" "Jenkinsfile" "steps.sh" "tasks.txt" "flask.service"
-                        ls -lh flaskapp.zip
+                        zip -r flaskapp.zip ./* -x "*.git*" "*.venv*" "myenv/*" "Jenkinsfile" "steps.sh" "tasks.txt" "flask.service"
                     '''
                 }
             }
@@ -49,33 +47,31 @@ pipeline {
                         echo "Deploying flask-app to Production Server..."
                         scp -i $MY_SSH_KEY -o StrictHostKeyChecking=no flask-app/flaskapp.zip $USERNAME@$SERVER_IP:/home/$USERNAME/
 
-                        ssh -tt -i $MY_SSH_KEY -o StrictHostKeyChecking=no $USERNAME@$SERVER_IP << 'EOF'
+                        ssh -i $MY_SSH_KEY -o StrictHostKeyChecking=no $USERNAME@$SERVER_IP << EOF
                             set -e
-
-                            echo "Installing unzip if not present..."
+                            echo "Installing unzip if not installed..."
                             command -v unzip >/dev/null 2>&1 || (sudo apt-get update -y && sudo apt-get install -y unzip)
 
-                            echo "Unzipping flaskapp.zip..."
-                            mkdir -p /home/$USER/app
-                            unzip -o /home/$USER/flaskapp.zip -d /home/$USER/app
+                            echo "Unzipping flaskapp.zip into /home/$USERNAME/app/..."
+                            mkdir -p /home/$USERNAME/app
+                            unzip -o /home/$USERNAME/flaskapp.zip -d /home/$USERNAME/app/
 
-                            echo "Setting up Python virtual environment..."
-                            cd /home/$USER/app
+                            echo "Creating or Activating virtual environment and installing dependencies..."
+                            cd /home/$USERNAME/app
                             if [ ! -d "venv" ] || [ ! -f "venv/bin/activate" ]; then
                                 python3 -m venv venv
                             fi
-
                             source venv/bin/activate
                             pip install --upgrade pip
                             pip install -r requirements.txt
 
-                            echo "Restarting Flask service..."
+                            echo "Restarting flaskapp.service..."
                             sudo systemctl daemon-reload
                             sudo systemctl restart flaskapp.service
 
                             echo "✅ Deployment complete"
                             exit 0
-EOF
+                        EOF
                     '''
                 }
             }
