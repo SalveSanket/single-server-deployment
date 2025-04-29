@@ -11,9 +11,6 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# --------------------------------------------
-# Output Functions
-# --------------------------------------------
 info()    { echo -e "${BLUE}ℹ️  $1${NC}"; }
 success() { echo -e "${GREEN}✅ $1${NC}"; }
 warn()    { echo -e "${YELLOW}⚠️  $1${NC}"; }
@@ -27,9 +24,6 @@ section() {
     echo ""
 }
 
-# --------------------------------------------
-# Spinner with safe terminal check
-# --------------------------------------------
 spinner() {
     local pid=$1
     local delay=0.1
@@ -45,12 +39,7 @@ spinner() {
     return $?
 }
 
-# Hide cursor only if interactive shell
-if [ -t 1 ]; then
-    trap 'tput cnorm' EXIT
-else
-    trap '' EXIT
-fi
+if [ -t 1 ]; then trap 'tput cnorm' EXIT; else trap '' EXIT; fi
 
 # --------------------------------------------
 # Detecting System Information
@@ -72,12 +61,11 @@ info "Current User: $CURRENT_USER"
 info "Hostname: $HOSTNAME"
 
 # --------------------------------------------
-# Install Python and Pip if needed
+# Install Python and Pip
 # --------------------------------------------
 section "Installing Python and Pip"
 
 install_python=false
-
 if ! command -v python3 >/dev/null 2>&1; then
     install_python=true
 fi
@@ -86,31 +74,33 @@ case "$DISTRO" in
     ubuntu|debian)
         if $install_python; then
             info "Installing python3, pip3, venv..."
-            sudo apt update -y > /dev/null 2>&1 &
+            sudo apt-get update -y > /dev/null 2>&1 &
             spinner $!
-            sudo apt install -y python3 python3-pip python3-venv > /dev/null 2>&1 &
-            spinner $!
-        else
-            success "Python3 already installed."
         fi
+
+        info "Installing python3-venv, python3.10-venv, pip3..."
+        sudo apt-get install -y python3 python3-pip python3-venv python3.10-venv > /dev/null 2>&1 &
+        spinner $!
         ;;
     centos|rhel|rocky|amzn)
         if $install_python; then
             info "Installing python3 and pip3..."
             sudo yum update -y > /dev/null 2>&1 &
             spinner $!
-            sudo yum install -y python3 python3-pip > /dev/null 2>&1 &
-            spinner $!
-        else
-            success "Python3 already installed."
         fi
+
+        sudo yum install -y python3 python3-pip python3-virtualenv > /dev/null 2>&1 &
+        spinner $!
         ;;
     *)
         error_exit "Unsupported Linux distribution: $DISTRO"
         ;;
 esac
 
-success "Python3 and Pip3 installation step complete."
+command -v python3 >/dev/null || error_exit "Python3 installation failed."
+command -v pip3 >/dev/null || error_exit "pip3 installation failed."
+
+success "Python3 and Pip3 installation complete."
 
 # --------------------------------------------
 # Setup Application Directory
@@ -134,9 +124,16 @@ cd "$APP_DIR" || error_exit "Failed to enter app directory."
 section "Creating Python Virtual Environment"
 
 if [ -d "venv" ]; then
-    success "Virtual environment already exists."
-else
-    info "Creating venv..."
+    if [ -f "venv/bin/activate" ]; then
+        success "Virtual environment already exists."
+    else
+        warn "venv directory is invalid. Removing and recreating..."
+        rm -rf venv
+    fi
+fi
+
+if [ ! -d "venv" ]; then
+    info "Creating new virtual environment..."
     python3 -m venv venv || error_exit "Failed to create virtual environment."
     success "Virtual environment created."
 fi
@@ -146,9 +143,13 @@ fi
 # --------------------------------------------
 section "Installing Flask in Virtual Environment"
 
+if [ ! -f "venv/bin/activate" ]; then
+    error_exit "Virtual environment activation script not found. Ensure venv was created successfully."
+fi
+
 source venv/bin/activate
 if pip list | grep -q Flask; then
-    success "Flask already installed inside virtualenv."
+    success "Flask already installed in virtualenv."
 else
     info "Installing Flask..."
     pip install --upgrade pip > /dev/null 2>&1 &
@@ -160,14 +161,14 @@ fi
 deactivate
 
 # --------------------------------------------
-# Create flaskapp.service if not exists
+# Create flaskapp.service for systemd
 # --------------------------------------------
 section "Creating flaskapp.service for systemd"
 
 SERVICE_PATH="/etc/systemd/system/flaskapp.service"
 
 if [ -f "$SERVICE_PATH" ]; then
-    success "Systemd service flaskapp.service already exists."
+    success "Systemd service already exists: flaskapp.service"
 else
     info "Creating systemd service..."
     cat <<EOF | sudo tee "$SERVICE_PATH" > /dev/null
@@ -187,27 +188,26 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
-    success "Systemd service created: flaskapp.service"
+    success "Systemd service created."
 fi
 
 # --------------------------------------------
-# Start / Restart Service
+# Start or Restart the Flask Service
 # --------------------------------------------
 section "Starting or Restarting flaskapp.service"
 
 info "Reloading systemd daemon..."
 sudo systemctl daemon-reexec > /dev/null 2>&1 &
 spinner $!
-
 sudo systemctl daemon-reload > /dev/null 2>&1 &
 spinner $!
 
-info "Enabling service on boot..."
+info "Enabling flaskapp.service on boot..."
 sudo systemctl enable flaskapp.service > /dev/null 2>&1 &
 spinner $!
 
-info "Starting / Restarting service..."
+info "Restarting flaskapp.service..."
 sudo systemctl restart flaskapp.service > /dev/null 2>&1 &
 spinner $!
 
-success "Flask app service is active and running 🚀"
+success "Flask app service is running 🚀"
