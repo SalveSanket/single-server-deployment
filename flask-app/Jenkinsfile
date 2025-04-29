@@ -45,23 +45,19 @@ pipeline {
                 withCredentials([sshUserPrivateKey(credentialsId: 'ssh-key', keyFileVariable: 'MY_SSH_KEY', usernameVariable: 'USERNAME')]) {
                     sh '''
                         echo "Deploying flask-app to Production Server..."
-
-                        # Copy artifact to server
                         scp -i $MY_SSH_KEY -o StrictHostKeyChecking=no flask-app/flaskapp.zip $USERNAME@$SERVER_IP:/home/$USERNAME/
 
-                        # Execute deployment remotely and capture result explicitly
-                        ssh -i $MY_SSH_KEY -o StrictHostKeyChecking=no $USERNAME@$SERVER_IP 'bash -s' <<'ENDSSH'
+                        ssh -i $MY_SSH_KEY -o StrictHostKeyChecking=no $USERNAME@$SERVER_IP << EOF
                             set -e
-
                             echo "Installing unzip if not installed..."
                             command -v unzip >/dev/null 2>&1 || (sudo apt-get update -y && sudo apt-get install -y unzip)
 
-                            echo "Unzipping flaskapp.zip into /home/$USER/app/..."
-                            mkdir -p /home/$USER/app
-                            unzip -o /home/$USER/flaskapp.zip -d /home/$USER/app
+                            echo "Unzipping flaskapp.zip into /home/$USERNAME/app/..."
+                            mkdir -p /home/$USERNAME/app
+                            unzip -o /home/$USERNAME/flaskapp.zip -d /home/$USERNAME/app/
 
                             echo "Creating or Activating virtual environment and installing dependencies..."
-                            cd /home/$USER/app
+                            cd /home/$USERNAME/app
                             if [ ! -d "venv" ] || [ ! -f "venv/bin/activate" ]; then
                                 python3 -m venv venv
                             fi
@@ -74,9 +70,9 @@ pipeline {
                             sudo systemctl restart flaskapp.service
 
                             echo "✅ Deployment complete"
-                            ENDSSH
 
-                        echo "✅ Remote deployment script finished successfully."
+                            exit 0
+                        EOF
                     '''
                 }
             }
