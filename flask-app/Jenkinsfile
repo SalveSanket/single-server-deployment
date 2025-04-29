@@ -20,7 +20,11 @@ pipeline {
         stage('Run Tests') {
             steps {
                 dir('flask-app') {
-                    sh 'pytest'
+                    sh '''
+                        echo "Running tests..."
+                        export PATH=$HOME/.local/bin:$PATH
+                        pytest
+                    '''
                 }
             }
         }
