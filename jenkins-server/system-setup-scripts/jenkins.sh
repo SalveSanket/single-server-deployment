@@ -57,37 +57,70 @@ detect_user() {
 # INSTALL JAVA & JENKINS
 # ──────────────────────────────────────────────────────────────────────────────
 install_jenkins() {
+  # Check if Java 17 is installed
+  if command -v java &>/dev/null; then
+    JAVA_VERSION=$(java -version 2>&1 | awk -F '"' '/version/ {print $2}')
+    if [[ "$JAVA_VERSION" == 17* ]]; then
+      log "Java 17 is already installed. Skipping Java installation."
+      JAVA_INSTALLED=true
+    else
+      JAVA_INSTALLED=false
+    fi
+  else
+    JAVA_INSTALLED=false
+  fi
+
+  # Check if Jenkins is installed
+  if systemctl list-unit-files | grep -q '^jenkins.service'; then
+    log "Jenkins service is already installed. Skipping Jenkins installation."
+    JENKINS_INSTALLED=true
+  elif command -v jenkins &>/dev/null; then
+    log "Jenkins binary found. Skipping Jenkins installation."
+    JENKINS_INSTALLED=true
+  else
+    JENKINS_INSTALLED=false
+  fi
+
   case "$PKG" in
     yum|dnf)
       log "Updating packages..."
       sudo $PKG update -y
-      log "Installing Amazon Corretto 17..."
-      sudo $PKG install -y java-17-amazon-corretto
 
-      log "Adding Jenkins repo and key..."
-      sudo wget -O /etc/yum.repos.d/jenkins.repo "$JENKINS_REPO_URL"
-      sudo rpm --import "$JENKINS_KEY_URL"
+      if [ "$JAVA_INSTALLED" = false ]; then
+        log "Installing Amazon Corretto 17..."
+        sudo $PKG install -y java-17-amazon-corretto
+      fi
 
-      log "Installing Jenkins..."
-      sudo $PKG install -y jenkins
+      if [ "$JENKINS_INSTALLED" = false ]; then
+        log "Adding Jenkins repo and key..."
+        sudo wget -O /etc/yum.repos.d/jenkins.repo "$JENKINS_REPO_URL"
+        sudo rpm --import "$JENKINS_KEY_URL"
+
+        log "Installing Jenkins..."
+        sudo $PKG install -y jenkins
+      fi
       ;;
     apt)
       log "Updating packages..."
       sudo apt update -y && sudo apt upgrade -y
 
-      log "Installing OpenJDK 17..."
-      sudo apt install -y openjdk-17-jdk
+      if [ "$JAVA_INSTALLED" = false ]; then
+        log "Installing OpenJDK 17..."
+        sudo apt install -y openjdk-17-jdk
+      fi
 
-      log "Adding Jenkins repo and key (secure for Ubuntu)..."
-      curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key | \
-        gpg --dearmor | sudo tee /usr/share/keyrings/jenkins-keyring.gpg > /dev/null
+      if [ "$JENKINS_INSTALLED" = false ]; then
+        log "Adding Jenkins repo and key (secure for Ubuntu)..."
+        curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key | \
+          gpg --dearmor | sudo tee /usr/share/keyrings/jenkins-keyring.gpg > /dev/null
 
-      echo "deb [signed-by=/usr/share/keyrings/jenkins-keyring.gpg] https://pkg.jenkins.io/debian-stable binary/" | \
-        sudo tee /etc/apt/sources.list.d/jenkins.list > /dev/null
+        echo "deb [signed-by=/usr/share/keyrings/jenkins-keyring.gpg] https://pkg.jenkins.io/debian-stable binary/" | \
+          sudo tee /etc/apt/sources.list.d/jenkins.list > /dev/null
 
-      sudo apt update
-      log "Installing Jenkins..."
-      sudo apt install -y jenkins
+        sudo apt update
+        log "Installing Jenkins..."
+        sudo apt install -y jenkins
+      fi
       ;;
     *) err "Unsupported package manager: $PKG" ;;
   esac

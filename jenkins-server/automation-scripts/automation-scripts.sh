@@ -11,6 +11,50 @@
 
 set -e  # Exit on error
 
+# Color functions
+info()    { printf "\033[1;34m[INFO]\033[0m %s\n" "$1"; }
+success() { printf "\033[1;32m[SUCCESS]\033[0m %s\n" "$1"; }
+warn()    { printf "\033[1;33m[WARNING]\033[0m %s\n" "$1"; }
+error_exit() { printf "\033[1;31m[ERROR]\033[0m %s\n" "$1"; exit 1; }
+
+# Section header
+section() {
+  printf "\n\033[1;36m%s\033[0m\n%s\n" "$1" "$(printf '%.0s-' $(seq 1 ${#1}))"
+}
+
+# Spinner function for background jobs
+spinner() {
+  local pid=$1
+  local delay=0.1
+  local spinstr='|/-\'
+  while kill -0 "$pid" 2>/dev/null; do
+    local temp=${spinstr#?}
+    printf " [%c]  " "$spinstr"
+    spinstr=$temp${spinstr%"$temp"}
+    sleep $delay
+    printf "\b\b\b\b\b\b"
+  done
+  printf "       \b\b\b\b\b\b"
+}
+
+# Retry command function
+retry_command() {
+  local n=0
+  local max=3
+  local delay=2
+  local cmd="$*"
+  until [ $n -ge $max ]
+  do
+    eval "$cmd" && break
+    n=$((n+1))
+    warn "Command failed. Retry $n/$max in $delay seconds..."
+    sleep $delay
+  done
+  if [ $n -eq $max ]; then
+    error_exit "Command failed after $max attempts: $cmd"
+  fi
+}
+
 # Resolve project root (assuming this script lives in /jenkins-server/automation-scripts/)
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 TERRAFORM_DIR="$ROOT_DIR/jenkins-server/terraform"
@@ -18,51 +62,45 @@ SCRIPTS_DIR="$ROOT_DIR/jenkins-server/system-setup-scripts"
 REMOTE_DIR_NAME="system-setup-scripts"
 
 # Check if Terraform and scripts directories exist
-if [ ! -d "$TERRAFORM_DIR" ]; then
-  echo "[ERROR] Terraform directory not found: $TERRAFORM_DIR"
-  exit 1
-fi
+[ ! -d "$TERRAFORM_DIR" ] && error_exit "Terraform directory not found: $TERRAFORM_DIR"
+[ ! -d "$SCRIPTS_DIR" ] && error_exit "System setup scripts directory not found: $SCRIPTS_DIR"
 
-if [ ! -d "$SCRIPTS_DIR" ]; then
-  echo "[ERROR] System setup scripts directory not found: $SCRIPTS_DIR"
-  exit 1
-fi
-
-# Fetch outputs
+section "Fetching Terraform outputs"
 cd "$TERRAFORM_DIR"
-echo "[INFO] Fetching Terraform outputs..."
-PUBLIC_IP=$(terraform output -raw jenkins_instance_public_ip)
-SSH_USER=$(terraform output -raw default_ec2_username)
-PRIVATE_KEY=$(terraform output -raw private_key_file)
+retry_command terraform output -raw jenkins_instance_public_ip > /tmp/public_ip.tmp &
+spinner $!
+PUBLIC_IP=$(cat /tmp/public_ip.tmp)
+retry_command terraform output -raw default_ec2_username > /tmp/ssh_user.tmp &
+spinner $!
+SSH_USER=$(cat /tmp/ssh_user.tmp)
+retry_command terraform output -raw private_key_file > /tmp/private_key.tmp &
+spinner $!
+PRIVATE_KEY=$(cat /tmp/private_key.tmp)
+rm -f /tmp/public_ip.tmp /tmp/ssh_user.tmp /tmp/private_key.tmp
 
 if [[ -z "$PUBLIC_IP" || -z "$SSH_USER" || -z "$PRIVATE_KEY" ]]; then
-  echo "[ERROR] One or more Terraform outputs are missing."
-  exit 1
+  error_exit "One or more Terraform outputs are missing."
 fi
 
-# Show remote info
-echo "[INFO] Connecting to: $SSH_USER@$PUBLIC_IP"
-echo "[INFO] Copying from: $SCRIPTS_DIR"
-echo ""
-echo "[INFO] Contents to be copied:"
+section "Remote server info"
+info "Connecting to: $SSH_USER@$PUBLIC_IP"
+info "Copying from: $SCRIPTS_DIR"
+
+section "Contents to be copied"
 find "$SCRIPTS_DIR" -type f | sed "s|$ROOT_DIR/||"
 
-# Confirm before continuing
 echo ""
-read -p "Do you want to proceed with copying the above files to the remote server? (yes/no): " CONFIRM
-if [[ "$CONFIRM" != "yes" ]]; then
-  echo "[INFO] Operation cancelled."
-  exit 0
-fi
+read -p "Proceed with copying the above files to the remote server? (yes/no): " CONFIRM
+[[ "$CONFIRM" != "yes" ]] && { info "Operation cancelled."; exit 0; }
 
-# Copy the directory
-echo "[INFO] Copying directory to remote server home (~)..."
-ssh -i "$PRIVATE_KEY" "$SSH_USER@$PUBLIC_IP" "rm -rf ~/$REMOTE_DIR_NAME && mkdir -p ~/$REMOTE_DIR_NAME"
-scp -i "$PRIVATE_KEY" -r "$SCRIPTS_DIR" "$SSH_USER@$PUBLIC_IP:~/"
+section "Copying directory to remote server"
+retry_command ssh -i "$PRIVATE_KEY" "$SSH_USER@$PUBLIC_IP" "rm -rf ~/$REMOTE_DIR_NAME && mkdir -p ~/$REMOTE_DIR_NAME" &
+spinner $!
+retry_command scp -i "$PRIVATE_KEY" -r "$SCRIPTS_DIR" "$SSH_USER@$PUBLIC_IP:~/" &
+spinner $!
 
-# Remote execution block
-echo "[INFO] Setting permissions and executing scripts on remote server..."
-ssh -i "$PRIVATE_KEY" "$SSH_USER@$PUBLIC_IP" bash <<EOF
+section "Executing scripts on remote server"
+retry_command ssh -i "$PRIVATE_KEY" "$SSH_USER@$PUBLIC_IP" bash <<EOF
   set -e
   cd ~/$REMOTE_DIR_NAME
 
@@ -79,7 +117,8 @@ ssh -i "$PRIVATE_KEY" "$SSH_USER@$PUBLIC_IP" bash <<EOF
     echo "[INFO] Executing \$script..."
     "./\$script"
   done
-EOF
+EOF &
+spinner $!
 
 echo ""
-echo "✅ Successfully copied '$REMOTE_DIR_NAME' and executed scripts on $SSH_USER@$PUBLIC_IP"
+success "Successfully copied '$REMOTE_DIR_NAME' and executed scripts on $SSH_USER@$PUBLIC_IP"
