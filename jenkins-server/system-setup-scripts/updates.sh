@@ -10,8 +10,8 @@ set -euo pipefail
 # ──────────────────────────────────────────────────────────────────────────────
 # UTILITY FUNCTIONS
 # ──────────────────────────────────────────────────────────────────────────────
-log()   { echo "[INFO] $1"; }
-err()   { echo "[ERROR] $1" >&2; exit 1; }
+log()   { echo -e "\033[1;34m[INFO]\033[0m $1"; }
+err()   { echo -e "\033[1;31m[ERROR]\033[0m $1" >&2; exit 1; }
 
 # ──────────────────────────────────────────────────────────────────────────────
 # DETECT OS & PACKAGE MANAGER
@@ -21,21 +21,10 @@ detect_os() {
   source /etc/os-release
 
   case "$ID" in
-    ubuntu)
-      OS="ubuntu"
-      PKG="apt"
-      ;;
-    amzn)
-      [[ "$VERSION_ID" =~ ^2 ]] && OS="amazon2" || OS="amazon2023"
-      PKG="yum"
-      ;;
-    centos|rhel)
-      OS="$ID"
-      PKG="yum"
-      ;;
-    *)
-      err "Unsupported OS: $ID"
-      ;;
+    ubuntu)      OS="ubuntu";      PKG="apt" ;;
+    amzn)        OS="amazon";      PKG="yum" ;;
+    centos|rhel) OS="$ID";         PKG="yum" ;;
+    *)           err "Unsupported OS: $ID" ;;
   esac
 }
 
@@ -47,14 +36,14 @@ update_system() {
   case "$PKG" in
     apt)
       sudo apt update -y || true
-      if ! sudo apt upgrade -y; then
-        log "Encountered package fetch errors, retrying with --fix-missing..."
+      sudo apt upgrade -y || {
+        log "Retrying with --fix-missing..."
         sudo apt update -y --fix-missing
         sudo apt upgrade -y
-      fi
+      }
       ;;
     yum)
-      sudo yum update -y && sudo yum upgrade -y
+      sudo yum update -y
       ;;
     dnf)
       sudo dnf upgrade -y
@@ -66,80 +55,33 @@ update_system() {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
-# INSTALL OR UPDATE GIT
+# INSTALL ESSENTIAL UTILITIES
 # ──────────────────────────────────────────────────────────────────────────────
-install_or_update_git() {
-  if command -v git &>/dev/null; then
-    log "Git is already installed: version $(git --version)"
-    case "$PKG" in
-      apt)
-        sudo apt install -y git
-        ;;
-      yum|dnf)
-        sudo $PKG install -y git
-        ;;
-    esac
-    log "✅ Git has been updated to: $(git --version)"
-  else
-    log "Git is not installed. Installing..."
-    case "$PKG" in
-      apt)
-        sudo apt install -y git
-        ;;
-      yum|dnf)
-        sudo $PKG install -y git
-        ;;
-    esac
-    log "✅ Git installation complete: $(git --version)"
-  fi
-}
+install_utilities() {
+  log "Installing Git, Python, pip, venv, curl, unzip, zip, and pytest..."
 
-# ──────────────────────────────────────────────────────────────────────────────
-# INSTALL PYTHON, PIP, AND VENV
-# ──────────────────────────────────────────────────────────────────────────────
-install_python_utils() {
-  log "🐍 Ensuring Python, pip, and venv are installed..."
   case "$PKG" in
     apt)
-      sudo apt install -y python3 python3-pip python3-venv
+      sudo apt install -y git python3 python3-pip python3-venv curl unzip zip python3-pytest
       ;;
     yum|dnf)
-      sudo $PKG install -y python3 python3-pip
+      sudo $PKG install -y git python3 python3-pip curl unzip zip python3-pytest
       ;;
     *)
-      err "Unsupported package manager for Python utilities: $PKG"
+      err "Unsupported package manager for utilities: $PKG"
       ;;
   esac
 
-  if ! command -v python3 >/dev/null || ! command -v pip3 >/dev/null; then
-    err "Python3 or pip3 installation failed."
+  # Verify installs
+  for cmd in git python3 pip3 curl unzip zip; do
+    command -v "$cmd" >/dev/null || err "$cmd installation failed!"
+  done
+
+  if ! python3 -m pytest --version >/dev/null 2>&1; then
+    err "pytest installation failed or pytest module not found!"
   fi
 
-  log "✅ Python, pip3, and venv are installed."
-}
-
-# ──────────────────────────────────────────────────────────────────────────────
-# INSTALL JENKINS DEPENDENCIES (pip, pytest, zip, unzip, curl, etc.)
-# ──────────────────────────────────────────────────────────────────────────────
-install_jenkins_deps() {
-  log "🧰 Installing additional Jenkins dependencies (curl, unzip, zip, pytest)..."
-  case "$PKG" in
-    apt)
-      sudo apt install -y curl unzip zip python3-pytest
-      ;;
-    yum|dnf)
-      sudo $PKG install -y curl unzip zip python3-pytest
-      ;;
-    *)
-      err "Unsupported package manager for Jenkins dependencies: $PKG"
-      ;;
-  esac
-
-  if ! command -v pytest >/dev/null || ! command -v zip >/dev/null; then
-    err "Some Jenkins dependencies failed to install properly."
-  fi
-
-  log "✅ All Jenkins dependencies installed successfully."
+  log "✅ All essential utilities are installed successfully."
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -151,13 +93,8 @@ detect_os
 log "📦 Performing system update..."
 update_system
 
-log "🐙 Checking Git installation..."
-install_or_update_git
-
-log "🐍 Ensuring Python and pip are installed..."
-install_python_utils
-
-log "🧪 Installing Jenkins build dependencies..."
-install_jenkins_deps
+log "🧰 Installing utilities..."
+install_utilities
 
 log "✅ Update script completed successfully."
+exit 0
