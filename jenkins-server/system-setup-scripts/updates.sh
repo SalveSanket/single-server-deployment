@@ -119,6 +119,30 @@ install_python_utils() {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
+# INSTALL JENKINS DEPENDENCIES (pip, pytest, zip, unzip, curl, etc.)
+# ──────────────────────────────────────────────────────────────────────────────
+install_jenkins_deps() {
+  log "🧰 Installing additional Jenkins dependencies (curl, unzip, zip, pytest)..."
+  case "$PKG" in
+    apt)
+      sudo apt install -y curl unzip zip python3-pytest
+      ;;
+    yum|dnf)
+      sudo $PKG install -y curl unzip zip python3-pytest
+      ;;
+    *)
+      err "Unsupported package manager for Jenkins dependencies: $PKG"
+      ;;
+  esac
+
+  if ! command -v pytest >/dev/null || ! command -v zip >/dev/null; then
+    err "Some Jenkins dependencies failed to install properly."
+  fi
+
+  log "✅ All Jenkins dependencies installed successfully."
+}
+
+# ──────────────────────────────────────────────────────────────────────────────
 # MAIN EXECUTION
 # ──────────────────────────────────────────────────────────────────────────────
 log "🔍 Detecting system..."
@@ -132,5 +156,8 @@ install_or_update_git
 
 log "🐍 Ensuring Python and pip are installed..."
 install_python_utils
+
+log "🧪 Installing Jenkins build dependencies..."
+install_jenkins_deps
 
 log "✅ Update script completed successfully."
