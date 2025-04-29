@@ -70,7 +70,7 @@ pipeline {
                         sudo systemctl restart flaskapp.service
 
                         echo "✅ Deployment complete"
-                        EOF
+EOF
                     '''
                 }
             }
