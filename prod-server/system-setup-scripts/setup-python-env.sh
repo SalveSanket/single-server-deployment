@@ -97,77 +97,39 @@ info "Hostname            : $HOSTNAME"
 # --------------------------------------------
 section "Installing Python and Pip"
 
-PYTHON_INSTALLED=false
-PIP_INSTALLED=false
-
-if command -v python3 &> /dev/null; then
-    PYTHON_INSTALLED=true
-    info "Python3 is already installed. Skipping installation."
-fi
-
-if command -v pip3 &> /dev/null; then
-    PIP_INSTALLED=true
-    info "pip3 is already installed. Skipping installation."
-fi
-
-if [ "$PYTHON_INSTALLED" = false ] || [ "$PIP_INSTALLED" = false ]; then
+if command -v python3 &>/dev/null; then
+    success "Python3 already installed, skipping."
+else
+    info "Installing Python3..."
     case "$DISTRO" in
         ubuntu|debian)
-            info "Updating apt package index..."
             retry_command sudo apt update -y &
             spinner $!
-            if [ "$PYTHON_INSTALLED" = false ]; then
-                info "Installing python3..."
-                retry_command sudo apt install -y python3 &
-                spinner $!
-            fi
-            if [ "$PIP_INSTALLED" = false ]; then
-                info "Installing python3-pip and python3-venv..."
-                retry_command sudo apt install -y python3-pip python3-venv &
-                spinner $!
-            fi
+            retry_command sudo apt install -y python3 python3-pip python3-venv &
+            spinner $!
             ;;
         centos|rhel|rocky)
-            info "Updating yum package index..."
             retry_command sudo yum update -y &
             spinner $!
-            if [ "$PYTHON_INSTALLED" = false ]; then
-                info "Installing python3..."
-                retry_command sudo yum install -y python3 &
-                spinner $!
-            fi
-            if [ "$PIP_INSTALLED" = false ]; then
-                info "Installing python3-pip..."
-                retry_command sudo yum install -y python3-pip &
-                spinner $!
-            fi
+            retry_command sudo yum install -y python3 python3-pip &
+            spinner $!
             ;;
         amzn)
-            info "Updating yum package index..."
             retry_command sudo yum update -y &
             spinner $!
-            if [ "$PYTHON_INSTALLED" = false ]; then
-                info "Installing python3..."
-                retry_command sudo yum install -y python3 &
+            retry_command sudo yum install -y python3 &
+            spinner $!
+            if ! command -v pip3 &> /dev/null; then
+                retry_command sudo python3 -m ensurepip --upgrade &
                 spinner $!
-            fi
-            if [ "$PIP_INSTALLED" = false ]; then
-                if ! command -v pip3 &> /dev/null; then
-                    info "Installing pip3 manually..."
-                    retry_command sudo python3 -m ensurepip --upgrade &
-                    spinner $!
-                fi
             fi
             ;;
         *)
             error_exit "Unsupported Linux distribution: $DISTRO"
             ;;
     esac
-else
-    info "Python3 and pip3 are already installed. Skipping installation."
+    success "Python3 and Pip3 installation completed."
 fi
-
-success "Python3 and Pip3 installation completed."
 
 # --------------------------------------------
 # Setup Project Directory
@@ -177,7 +139,7 @@ section "Setting up Project Directory"
 APP_DIR="/home/$CURRENT_USER/app"
 
 if [ -d "$APP_DIR" ]; then
-    info "Application directory already exists at: $APP_DIR. Skipping creation."
+    success "Application directory already exists: $APP_DIR"
 else
     info "Creating application directory at: $APP_DIR"
     mkdir -p "$APP_DIR" || error_exit "Failed to create application directory."
@@ -193,7 +155,7 @@ success "Moved into directory: $APP_DIR"
 section "Creating Python Virtual Environment"
 
 if [ -d "$APP_DIR/venv" ]; then
-    info "Virtual environment already exists at $APP_DIR/venv. Skipping creation."
+    success "Virtual environment already exists."
 else
     info "Creating virtual environment 'venv/'"
     python3 -m venv venv || error_exit "Failed to create virtual environment."
@@ -205,20 +167,16 @@ fi
 # --------------------------------------------
 section "Installing Flask in Virtual Environment"
 
-info "Activating virtual environment and checking Flask installation..."
 source venv/bin/activate
-
-if pip show flask &> /dev/null; then
-    info "Flask is already installed inside the virtual environment. Skipping installation."
+if pip list | grep -i flask &>/dev/null; then
+    success "Flask already installed inside virtualenv."
 else
+    info "Installing Flask..."
     retry_command pip install --upgrade pip
     retry_command pip install flask
     success "Flask installed successfully inside virtual environment."
 fi
-
 deactivate
-
-# (⚡ Sample app.py creation is REMOVED here)
 
 # --------------------------------------------
 # Create systemd service for Flask app
@@ -226,8 +184,9 @@ deactivate
 section "Creating flaskapp.service for systemd"
 
 if [ -f /etc/systemd/system/flaskapp.service ]; then
-    info "flaskapp.service already exists at /etc/systemd/system/. Skipping creation."
+    success "Systemd service flaskapp.service already exists."
 else
+    info "Creating systemd service flaskapp.service"
     cat <<EOF | sudo tee /etc/systemd/system/flaskapp.service
 [Unit]
 Description=Flask Web Application
@@ -245,39 +204,44 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
-
     success "flaskapp.service created at /etc/systemd/system/"
 fi
 
 # --------------------------------------------
-# Reload systemd and start the service
+# Reload systemd and start/restart the service
 # --------------------------------------------
-section "Starting flaskapp.service"
+section "Starting or Restarting flaskapp.service"
 
 info "Reloading systemd daemon..."
 retry_command sudo systemctl daemon-reload &
 spinner $!
 
-info "Enabling flaskapp.service to start on boot..."
+info "Restarting flaskapp.service..."
+retry_command sudo systemctl restart flaskapp.service &
+spinner $!
+
+info "Enabling flaskapp.service on boot..."
 retry_command sudo systemctl enable flaskapp.service &
 spinner $!
 
-info "Starting flaskapp.service now..."
-retry_command sudo systemctl start flaskapp.service &
-spinner $!
-
-success "Flask app service is up and running."
+success "Flask app service is restarted and enabled!"
 
 # --------------------------------------------
 # Final Success
 # --------------------------------------------
 section "Deployment Completed Successfully 🚀"
 
-success "✅ Python3 and Pip3 installed."
-success "✅ Flask installed."
+success "✅ Python3 and Pip3 installed or already present."
+success "✅ Flask installed or already present."
 success "✅ Application directory ready at $APP_DIR."
-success "✅ Systemd service running: flaskapp.service"
+success "✅ Systemd service running and restarted: flaskapp.service"
 
 echo ""
 info "You can check your app at: http://<your-server-ip>:5000"
 echo ""
+
+# --------------------------------------------
+# Restore cursor without clearing terminal
+# --------------------------------------------
+info "Restoring terminal cursor visibility..."
+tput cnorm
