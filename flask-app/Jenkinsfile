@@ -47,7 +47,7 @@ pipeline {
                         echo "Deploying flask-app to Production Server..."
                         scp -i $MY_SSH_KEY -o StrictHostKeyChecking=no flask-app/flaskapp.zip $USERNAME@$SERVER_IP:/home/$USERNAME/
 
-                        ssh -tt -i $MY_SSH_KEY -o StrictHostKeyChecking=no $USERNAME@$SERVER_IP << EOF
+                        ssh -i $MY_SSH_KEY -o StrictHostKeyChecking=no $USERNAME@$SERVER_IP << EOF
                             set -e
                             echo "Installing unzip if not installed..."
                             command -v unzip >/dev/null 2>&1 || (sudo apt-get update -y && sudo apt-get install -y unzip)
