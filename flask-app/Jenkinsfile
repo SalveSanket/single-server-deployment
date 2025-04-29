@@ -70,7 +70,4 @@ pipeline {
             }
         }
     }
-    post {
-        // Add post actions here if needed, e.g., cleanup or notifications
-    }
 }
