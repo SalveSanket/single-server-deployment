@@ -97,40 +97,75 @@ info "Hostname            : $HOSTNAME"
 # --------------------------------------------
 section "Installing Python and Pip"
 
-case "$DISTRO" in
-    ubuntu|debian)
-        info "Updating apt package index..."
-        retry_command sudo apt update -y &
-        spinner $!
-        info "Installing python3, pip3, venv..."
-        retry_command sudo apt install -y python3 python3-pip python3-venv &
-        spinner $!
-        ;;
-    centos|rhel|rocky)
-        info "Updating yum package index..."
-        retry_command sudo yum update -y &
-        spinner $!
-        info "Installing python3 and pip3..."
-        retry_command sudo yum install -y python3 python3-pip &
-        spinner $!
-        ;;
-    amzn)
-        info "Updating yum package index..."
-        retry_command sudo yum update -y &
-        spinner $!
-        info "Installing python3..."
-        retry_command sudo yum install -y python3 &
-        spinner $!
-        if ! command -v pip3 &> /dev/null; then
-            info "Installing pip3 manually..."
-            retry_command sudo python3 -m ensurepip --upgrade &
+PYTHON_INSTALLED=false
+PIP_INSTALLED=false
+
+if command -v python3 &> /dev/null; then
+    PYTHON_INSTALLED=true
+    info "Python3 is already installed. Skipping installation."
+fi
+
+if command -v pip3 &> /dev/null; then
+    PIP_INSTALLED=true
+    info "pip3 is already installed. Skipping installation."
+fi
+
+if [ "$PYTHON_INSTALLED" = false ] || [ "$PIP_INSTALLED" = false ]; then
+    case "$DISTRO" in
+        ubuntu|debian)
+            info "Updating apt package index..."
+            retry_command sudo apt update -y &
             spinner $!
-        fi
-        ;;
-    *)
-        error_exit "Unsupported Linux distribution: $DISTRO"
-        ;;
-esac
+            if [ "$PYTHON_INSTALLED" = false ]; then
+                info "Installing python3..."
+                retry_command sudo apt install -y python3 &
+                spinner $!
+            fi
+            if [ "$PIP_INSTALLED" = false ]; then
+                info "Installing python3-pip and python3-venv..."
+                retry_command sudo apt install -y python3-pip python3-venv &
+                spinner $!
+            fi
+            ;;
+        centos|rhel|rocky)
+            info "Updating yum package index..."
+            retry_command sudo yum update -y &
+            spinner $!
+            if [ "$PYTHON_INSTALLED" = false ]; then
+                info "Installing python3..."
+                retry_command sudo yum install -y python3 &
+                spinner $!
+            fi
+            if [ "$PIP_INSTALLED" = false ]; then
+                info "Installing python3-pip..."
+                retry_command sudo yum install -y python3-pip &
+                spinner $!
+            fi
+            ;;
+        amzn)
+            info "Updating yum package index..."
+            retry_command sudo yum update -y &
+            spinner $!
+            if [ "$PYTHON_INSTALLED" = false ]; then
+                info "Installing python3..."
+                retry_command sudo yum install -y python3 &
+                spinner $!
+            fi
+            if [ "$PIP_INSTALLED" = false ]; then
+                if ! command -v pip3 &> /dev/null; then
+                    info "Installing pip3 manually..."
+                    retry_command sudo python3 -m ensurepip --upgrade &
+                    spinner $!
+                fi
+            fi
+            ;;
+        *)
+            error_exit "Unsupported Linux distribution: $DISTRO"
+            ;;
+    esac
+else
+    info "Python3 and pip3 are already installed. Skipping installation."
+fi
 
 success "Python3 and Pip3 installation completed."
 
@@ -141,9 +176,13 @@ section "Setting up Project Directory"
 
 APP_DIR="/home/$CURRENT_USER/app"
 
-info "Creating application directory at: $APP_DIR"
-mkdir -p "$APP_DIR" || error_exit "Failed to create application directory."
-success "Directory created: $APP_DIR"
+if [ -d "$APP_DIR" ]; then
+    info "Application directory already exists at: $APP_DIR. Skipping creation."
+else
+    info "Creating application directory at: $APP_DIR"
+    mkdir -p "$APP_DIR" || error_exit "Failed to create application directory."
+    success "Directory created: $APP_DIR"
+fi
 
 cd "$APP_DIR" || error_exit "Failed to move into application directory."
 success "Moved into directory: $APP_DIR"
@@ -153,51 +192,43 @@ success "Moved into directory: $APP_DIR"
 # --------------------------------------------
 section "Creating Python Virtual Environment"
 
-info "Creating virtual environment 'venv/'"
-python3 -m venv venv || error_exit "Failed to create virtual environment."
-success "Virtual environment created at $APP_DIR/venv"
+if [ -d "$APP_DIR/venv" ]; then
+    info "Virtual environment already exists at $APP_DIR/venv. Skipping creation."
+else
+    info "Creating virtual environment 'venv/'"
+    python3 -m venv venv || error_exit "Failed to create virtual environment."
+    success "Virtual environment created at $APP_DIR/venv"
+fi
 
 # --------------------------------------------
 # Install Flask inside venv
 # --------------------------------------------
 section "Installing Flask in Virtual Environment"
 
-info "Activating virtual environment and installing Flask..."
+info "Activating virtual environment and checking Flask installation..."
 source venv/bin/activate
-retry_command pip install --upgrade pip
-retry_command pip install flask
-deactivate
-success "Flask installed successfully inside virtual environment."
 
-# --------------------------------------------
-# Create Sample app.py (if not exists)
-# --------------------------------------------
-section "Creating Sample Flask Application"
-
-if [ ! -f "$APP_DIR/app.py" ]; then
-    info "Creating sample app.py..."
-    cat <<EOF > app.py
-from flask import Flask
-app = Flask(__name__)
-
-@app.route("/")
-def home():
-    return "Hello, Flask World!"
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
-EOF
-    success "Sample app.py created."
+if pip show flask &> /dev/null; then
+    info "Flask is already installed inside the virtual environment. Skipping installation."
 else
-    warn "app.py already exists, skipping creation."
+    retry_command pip install --upgrade pip
+    retry_command pip install flask
+    success "Flask installed successfully inside virtual environment."
 fi
+
+deactivate
+
+# (⚡ Sample app.py creation is REMOVED here)
 
 # --------------------------------------------
 # Create systemd service for Flask app
 # --------------------------------------------
 section "Creating flaskapp.service for systemd"
 
-cat <<EOF | sudo tee /etc/systemd/system/flaskapp.service
+if [ -f /etc/systemd/system/flaskapp.service ]; then
+    info "flaskapp.service already exists at /etc/systemd/system/. Skipping creation."
+else
+    cat <<EOF | sudo tee /etc/systemd/system/flaskapp.service
 [Unit]
 Description=Flask Web Application
 After=network.target
@@ -215,7 +246,8 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
-success "flaskapp.service created at /etc/systemd/system/"
+    success "flaskapp.service created at /etc/systemd/system/"
+fi
 
 # --------------------------------------------
 # Reload systemd and start the service
@@ -243,7 +275,7 @@ section "Deployment Completed Successfully 🚀"
 
 success "✅ Python3 and Pip3 installed."
 success "✅ Flask installed."
-success "✅ Application created at $APP_DIR."
+success "✅ Application directory ready at $APP_DIR."
 success "✅ Systemd service running: flaskapp.service"
 
 echo ""
