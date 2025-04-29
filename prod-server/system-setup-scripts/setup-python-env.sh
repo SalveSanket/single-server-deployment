@@ -3,83 +3,62 @@
 set -euo pipefail
 
 # --------------------------------------------
-# Color and Output Formatting
+# Colors and Styles
 # --------------------------------------------
-info() {
-    echo -e "\033[1;34m[INFO]\033[0m $1"
-}
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
 
-success() {
-    echo -e "\033[1;32m[SUCCESS]\033[0m $1"
-}
-
-warn() {
-    echo -e "\033[1;33m[WARN]\033[0m $1"
-}
-
-error_exit() {
-    echo -e "\033[1;31m[ERROR]\033[0m $1" >&2
-    exit 1
-}
+# --------------------------------------------
+# Output Functions
+# --------------------------------------------
+info()    { echo -e "${BLUE}ℹ️  $1${NC}"; }
+success() { echo -e "${GREEN}✅ $1${NC}"; }
+warn()    { echo -e "${YELLOW}⚠️  $1${NC}"; }
+error_exit() { echo -e "${RED}❌ ERROR: $1${NC}" >&2; exit 1; }
 
 section() {
     echo ""
-    echo -e "\033[1;33m========================================"
+    echo -e "${YELLOW}========================================"
     echo "     $1"
-    echo -e "========================================\033[0m"
+    echo -e "========================================${NC}"
     echo ""
 }
 
 # --------------------------------------------
-# Spinner for background tasks
+# Spinner with safe terminal check
 # --------------------------------------------
 spinner() {
     local pid=$1
     local delay=0.1
-    local spinstr='|/-\'
-    tput civis
+    local spinstr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    local i=0
+    if [ -t 1 ]; then tput civis; fi
     while kill -0 "$pid" 2>/dev/null; do
-        local temp=${spinstr#?}
-        printf " [%c]  " "$spinstr"
-        spinstr=$temp${spinstr%"$temp"}
+        printf "\r [%c] " "${spinstr:i++%${#spinstr}:1}"
         sleep $delay
-        printf "\b\b\b\b\b\b"
     done
-    tput cnorm
+    if [ -t 1 ]; then tput cnorm; fi
     wait "$pid"
     return $?
 }
 
-trap 'tput cnorm' EXIT
+# Hide cursor only if interactive shell
+if [ -t 1 ]; then
+    trap 'tput cnorm' EXIT
+else
+    trap '' EXIT
+fi
 
 # --------------------------------------------
-# Retry Safe Command Execution
+# Detecting System Information
 # --------------------------------------------
-retry_command() {
-    local retries=3
-    local count=0
-    until "$@"; do
-        exit_code=$?
-        wait_time=$((2 ** count))
-        if [ $count -lt $retries ]; then
-            warn "Command failed with exit code $exit_code. Retrying in $wait_time seconds..."
-            sleep $wait_time
-            ((count++))
-        else
-            error_exit "Command failed after $retries attempts."
-        fi
-    done
-}
-
-# --------------------------------------------
-# Script Execution Starts Here
-# --------------------------------------------
-
 section "Detecting System Information"
 
 OS_NAME=$(uname -s | tr '[:upper:]' '[:lower:]')
 DISTRO="unknown"
-
 if [ -f /etc/os-release ]; then
     DISTRO_ID=$(grep '^ID=' /etc/os-release | cut -d'=' -f2 | tr -d '"')
     DISTRO=$DISTRO_ID
@@ -88,78 +67,78 @@ fi
 CURRENT_USER=$(whoami)
 HOSTNAME=$(hostname)
 
-info "Detected OS         : $DISTRO"
-info "Current User        : $CURRENT_USER"
-info "Hostname            : $HOSTNAME"
+info "Detected OS: $DISTRO"
+info "Current User: $CURRENT_USER"
+info "Hostname: $HOSTNAME"
 
 # --------------------------------------------
-# Install Python and Pip
+# Install Python and Pip if needed
 # --------------------------------------------
 section "Installing Python and Pip"
 
-if command -v python3 &>/dev/null; then
-    success "Python3 already installed, skipping."
-else
-    info "Installing Python3..."
-    case "$DISTRO" in
-        ubuntu|debian)
-            retry_command sudo apt update -y &
-            spinner $!
-            retry_command sudo apt install -y python3 python3-pip python3-venv &
-            spinner $!
-            ;;
-        centos|rhel|rocky)
-            retry_command sudo yum update -y &
-            spinner $!
-            retry_command sudo yum install -y python3 python3-pip &
-            spinner $!
-            ;;
-        amzn)
-            retry_command sudo yum update -y &
-            spinner $!
-            retry_command sudo yum install -y python3 &
-            spinner $!
-            if ! command -v pip3 &> /dev/null; then
-                retry_command sudo python3 -m ensurepip --upgrade &
-                spinner $!
-            fi
-            ;;
-        *)
-            error_exit "Unsupported Linux distribution: $DISTRO"
-            ;;
-    esac
-    success "Python3 and Pip3 installation completed."
+install_python=false
+
+if ! command -v python3 >/dev/null 2>&1; then
+    install_python=true
 fi
 
+case "$DISTRO" in
+    ubuntu|debian)
+        if $install_python; then
+            info "Installing python3, pip3, venv..."
+            sudo apt update -y > /dev/null 2>&1 &
+            spinner $!
+            sudo apt install -y python3 python3-pip python3-venv > /dev/null 2>&1 &
+            spinner $!
+        else
+            success "Python3 already installed."
+        fi
+        ;;
+    centos|rhel|rocky|amzn)
+        if $install_python; then
+            info "Installing python3 and pip3..."
+            sudo yum update -y > /dev/null 2>&1 &
+            spinner $!
+            sudo yum install -y python3 python3-pip > /dev/null 2>&1 &
+            spinner $!
+        else
+            success "Python3 already installed."
+        fi
+        ;;
+    *)
+        error_exit "Unsupported Linux distribution: $DISTRO"
+        ;;
+esac
+
+success "Python3 and Pip3 installation step complete."
+
 # --------------------------------------------
-# Setup Project Directory
+# Setup Application Directory
 # --------------------------------------------
 section "Setting up Project Directory"
 
 APP_DIR="/home/$CURRENT_USER/app"
-
 if [ -d "$APP_DIR" ]; then
-    success "Application directory already exists: $APP_DIR"
+    warn "App directory already exists: $APP_DIR"
 else
-    info "Creating application directory at: $APP_DIR"
-    mkdir -p "$APP_DIR" || error_exit "Failed to create application directory."
-    success "Directory created: $APP_DIR"
+    info "Creating directory: $APP_DIR"
+    mkdir -p "$APP_DIR"
+    success "Directory created."
 fi
 
-cd "$APP_DIR" || error_exit "Failed to move into application directory."
-success "Moved into directory: $APP_DIR"
+cd "$APP_DIR" || error_exit "Failed to enter app directory."
 
 # --------------------------------------------
 # Create Python Virtual Environment
 # --------------------------------------------
 section "Creating Python Virtual Environment"
 
-if [ -d "$APP_DIR/venv" ]; then
+if [ -d "venv" ]; then
     success "Virtual environment already exists."
 else
-    info "Creating virtual environment 'venv/'"
+    info "Creating venv..."
     python3 -m venv venv || error_exit "Failed to create virtual environment."
-    success "Virtual environment created at $APP_DIR/venv"
+    success "Virtual environment created."
 fi
 
 # --------------------------------------------
@@ -168,26 +147,30 @@ fi
 section "Installing Flask in Virtual Environment"
 
 source venv/bin/activate
-if pip list | grep -i flask &>/dev/null; then
+if pip list | grep -q Flask; then
     success "Flask already installed inside virtualenv."
 else
     info "Installing Flask..."
-    retry_command pip install --upgrade pip
-    retry_command pip install flask
-    success "Flask installed successfully inside virtual environment."
+    pip install --upgrade pip > /dev/null 2>&1 &
+    spinner $!
+    pip install flask > /dev/null 2>&1 &
+    spinner $!
+    success "Flask installed."
 fi
 deactivate
 
 # --------------------------------------------
-# Create systemd service for Flask app
+# Create flaskapp.service if not exists
 # --------------------------------------------
 section "Creating flaskapp.service for systemd"
 
-if [ -f /etc/systemd/system/flaskapp.service ]; then
+SERVICE_PATH="/etc/systemd/system/flaskapp.service"
+
+if [ -f "$SERVICE_PATH" ]; then
     success "Systemd service flaskapp.service already exists."
 else
-    info "Creating systemd service flaskapp.service"
-    cat <<EOF | sudo tee /etc/systemd/system/flaskapp.service
+    info "Creating systemd service..."
+    cat <<EOF | sudo tee "$SERVICE_PATH" > /dev/null
 [Unit]
 Description=Flask Web Application
 After=network.target
@@ -204,44 +187,27 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
-    success "flaskapp.service created at /etc/systemd/system/"
+    success "Systemd service created: flaskapp.service"
 fi
 
 # --------------------------------------------
-# Reload systemd and start/restart the service
+# Start / Restart Service
 # --------------------------------------------
 section "Starting or Restarting flaskapp.service"
 
 info "Reloading systemd daemon..."
-retry_command sudo systemctl daemon-reload &
+sudo systemctl daemon-reexec > /dev/null 2>&1 &
 spinner $!
 
-info "Restarting flaskapp.service..."
-retry_command sudo systemctl restart flaskapp.service &
+sudo systemctl daemon-reload > /dev/null 2>&1 &
 spinner $!
 
-info "Enabling flaskapp.service on boot..."
-retry_command sudo systemctl enable flaskapp.service &
+info "Enabling service on boot..."
+sudo systemctl enable flaskapp.service > /dev/null 2>&1 &
 spinner $!
 
-success "Flask app service is restarted and enabled!"
+info "Starting / Restarting service..."
+sudo systemctl restart flaskapp.service > /dev/null 2>&1 &
+spinner $!
 
-# --------------------------------------------
-# Final Success
-# --------------------------------------------
-section "Deployment Completed Successfully 🚀"
-
-success "✅ Python3 and Pip3 installed or already present."
-success "✅ Flask installed or already present."
-success "✅ Application directory ready at $APP_DIR."
-success "✅ Systemd service running and restarted: flaskapp.service"
-
-echo ""
-info "You can check your app at: http://<your-server-ip>:5000"
-echo ""
-
-# --------------------------------------------
-# Restore cursor without clearing terminal
-# --------------------------------------------
-info "Restoring terminal cursor visibility..."
-tput cnorm
+success "Flask app service is active and running 🚀"

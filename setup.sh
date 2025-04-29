@@ -36,29 +36,33 @@ print_error() {
 spinner() {
   local pid=$1
   local delay=0.1
-  local spinstr='|/-\'
-  while kill -0 $pid 2>/dev/null; do
-    local temp=${spinstr#?}
-    printf " [%c]  " "$spinstr"
-    spinstr=$temp${spinstr%"$temp"}
-    sleep $delay
-    printf "\b\b\b\b\b\b"
+  local spinstr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+  tput civis
+  while kill -0 "$pid" 2>/dev/null; do
+    for i in $(seq 0 $((${#spinstr} - 1))); do
+      printf "\r [%c]  " "${spinstr:i:1}"
+      sleep $delay
+    done
   done
-  printf "      \b\b\b\b\b\b"
+  tput cnorm
+  wait "$pid"
+  return $?
 }
 
 run_script_with_spinner() {
-  local script_path=$1
-  print_info "Running script: $script_path"
-  bash "$script_path" &
+  local script=$1
+  shift
+  local args="$@"
+  print_info "Running script: $script $args"
+  bash "$script" $args &
   local pid=$!
   spinner $pid
   wait $pid
   local status=$?
   if [ $status -eq 0 ]; then
-    print_success "Script completed successfully: $script_path"
+    print_success "Script completed successfully: $script"
   else
-    print_error "Script failed with status $status: $script_path"
+    print_error "Script failed with status $status: $script"
     exit $status
   fi
 }
@@ -75,7 +79,7 @@ if [ -d "$JENKINS_DIR" ]; then
   print_info "Found Jenkins automation directory: $JENKINS_DIR"
   cd "$JENKINS_DIR" || { print_error "Failed to enter directory $JENKINS_DIR"; exit 1; }
   if [ -x "$JENKINS_SCRIPT" ]; then
-    run_script_with_spinner "./$JENKINS_SCRIPT"
+    run_script_with_spinner "./$JENKINS_SCRIPT" --yes
   else
     print_error "Script $JENKINS_SCRIPT not found or not executable in $JENKINS_DIR"
     exit 1
@@ -94,7 +98,7 @@ if [ -d "$PROD_DIR" ]; then
   print_info "Found Prod automation directory: $PROD_DIR"
   cd "$PROD_DIR" || { print_error "Failed to enter directory $PROD_DIR"; exit 1; }
   if [ -x "$PROD_SCRIPT" ]; then
-    run_script_with_spinner "./$PROD_SCRIPT"
+    run_script_with_spinner "./$PROD_SCRIPT" --yes
   else
     print_error "Script $PROD_SCRIPT not found or not executable in $PROD_DIR"
     exit 1

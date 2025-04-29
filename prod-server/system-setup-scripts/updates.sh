@@ -12,25 +12,12 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # --------------------------------------------
-# Functions
+# Output Functions
 # --------------------------------------------
-
-info() {
-    echo -e "${BLUE}ℹ️  $1${NC}"
-}
-
-success() {
-    echo -e "${GREEN}✅ $1${NC}"
-}
-
-warn() {
-    echo -e "${YELLOW}⚠️  $1${NC}"
-}
-
-error_exit() {
-    echo -e "${RED}❌ ERROR: $1${NC}"
-    exit 1
-}
+info()    { echo -e "${BLUE}ℹ️  $1${NC}"; }
+success() { echo -e "${GREEN}✅ $1${NC}"; }
+warn()    { echo -e "${YELLOW}⚠️  $1${NC}"; }
+error_exit() { echo -e "${RED}❌ ERROR: $1${NC}" >&2; exit 1; }
 
 section() {
     echo ""
@@ -40,27 +27,34 @@ section() {
     echo ""
 }
 
+# --------------------------------------------
+# Spinner with safe terminal check
+# --------------------------------------------
 spinner() {
     local pid=$1
     local delay=0.1
-    local spinstr='|/-\'
-    tput civis  # hide cursor
+    local spinstr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    local i=0
+    if [ -t 1 ]; then tput civis; fi
     while kill -0 "$pid" 2>/dev/null; do
-        for i in $(seq 0 3); do
-            printf "\r${YELLOW}[%c]${NC} " "${spinstr:i:1}"
-            sleep $delay
-        done
+        printf "\r [%c] " "${spinstr:i++%${#spinstr}:1}"
+        sleep $delay
     done
-    printf "\r"
-    tput cnorm  # show cursor
+    if [ -t 1 ]; then tput cnorm; fi
+    wait "$pid"
+    return $?
 }
 
-trap 'tput cnorm' EXIT
+# Hide cursor on exit only in terminal
+if [ -t 1 ]; then
+    trap 'tput cnorm' EXIT
+else
+    trap '' EXIT
+fi
 
 # --------------------------------------------
-# Detect OS and Info
+# Detect OS Info
 # --------------------------------------------
-
 section "Detecting Operating System"
 
 OS_NAME=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -81,7 +75,6 @@ info "Hostname: $HOSTNAME"
 # --------------------------------------------
 # Update System Packages
 # --------------------------------------------
-
 section "Updating System Packages"
 
 case "$DISTRO" in
@@ -102,8 +95,8 @@ case "$DISTRO" in
             spinner $!
         fi
         ;;
-    amazon)
-        info "Updating using amazon-linux-extras..."
+    amzn)
+        info "Updating using amazon-linux..."
         sudo yum update -y > /dev/null 2>&1 &
         spinner $!
         ;;
