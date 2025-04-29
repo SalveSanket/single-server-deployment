@@ -80,6 +80,8 @@ section "Updating System Packages"
 case "$DISTRO" in
     ubuntu|debian)
         info "Updating using apt..."
+        export DEBIAN_FRONTEND=noninteractive
+        export NEEDRESTART_MODE=a
         sudo apt update -y > /dev/null 2>&1 &
         spinner $!
         sudo apt upgrade -y > /dev/null 2>&1 &
