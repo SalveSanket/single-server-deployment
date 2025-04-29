@@ -47,20 +47,22 @@ pipeline {
                         echo "Deploying flask-app to Production Server..."
                         scp -i $MY_SSH_KEY -o StrictHostKeyChecking=no flask-app/flaskapp.zip $USERNAME@$SERVER_IP:/home/$USERNAME/
 
-                        ssh -i $MY_SSH_KEY -o StrictHostKeyChecking=no $USERNAME@$SERVER_IP << EOF
+                        ssh -tt -i $MY_SSH_KEY -o StrictHostKeyChecking=no $USERNAME@$SERVER_IP << 'EOF'
                             set -e
+
                             echo "Installing unzip if not installed..."
                             command -v unzip >/dev/null 2>&1 || (sudo apt-get update -y && sudo apt-get install -y unzip)
 
-                            echo "Unzipping flaskapp.zip into /home/$USERNAME/app/..."
-                            mkdir -p /home/$USERNAME/app
-                            unzip -o /home/$USERNAME/flaskapp.zip -d /home/$USERNAME/app/
+                            echo "Unzipping flaskapp.zip into /home/$USER/app/..."
+                            mkdir -p /home/$USER/app
+                            unzip -o /home/$USER/flaskapp.zip -d /home/$USER/app
 
                             echo "Creating or Activating virtual environment and installing dependencies..."
-                            cd /home/$USERNAME/app
+                            cd /home/$USER/app
                             if [ ! -d "venv" ] || [ ! -f "venv/bin/activate" ]; then
                                 python3 -m venv venv
                             fi
+
                             source venv/bin/activate
                             pip install --upgrade pip
                             pip install -r requirements.txt
