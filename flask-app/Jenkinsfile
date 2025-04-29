@@ -11,8 +11,8 @@ pipeline {
                 dir('flask-app') {
                     sh '''
                         echo "Installing Python packages..."
-                        export PATH=$HOME/.local/bin:$PATH
                         pip3 install --user -r requirements.txt
+                        export PATH=$HOME/.local/bin:$PATH
                     '''
                 }
             }
@@ -51,8 +51,9 @@ pipeline {
 
                         ssh -tt -i $MY_SSH_KEY -o StrictHostKeyChecking=no $USERNAME@$SERVER_IP << EOF
                             set -e
+
                             echo "Installing unzip if not installed..."
-                            command -v unzip >/dev/null 2>&1 || sudo apt-get update -y && sudo apt-get install -y unzip
+                            command -v unzip >/dev/null 2>&1 || { sudo apt-get update -y && sudo apt-get install -y unzip; }
 
                             echo "Unzipping flaskapp.zip into /home/$USERNAME/app/..."
                             mkdir -p /home/$USERNAME/app
@@ -70,17 +71,11 @@ pipeline {
                             echo "Restarting flaskapp.service..."
                             sudo systemctl daemon-reload
                             sudo systemctl restart flaskapp.service
-                            echo "Deployment completed successfully."
+                            echo "✅ Deployment completed successfully."
                         EOF
                     '''
                 }
             }
-        }
-    }
-
-    post {
-        always {
-            echo '✅ Jenkins pipeline finished.'
         }
     }
 }
