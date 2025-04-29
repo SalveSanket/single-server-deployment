@@ -95,6 +95,30 @@ install_or_update_git() {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
+# INSTALL PYTHON, PIP, AND VENV
+# ──────────────────────────────────────────────────────────────────────────────
+install_python_utils() {
+  log "🐍 Ensuring Python, pip, and venv are installed..."
+  case "$PKG" in
+    apt)
+      sudo apt install -y python3 python3-pip python3-venv
+      ;;
+    yum|dnf)
+      sudo $PKG install -y python3 python3-pip
+      ;;
+    *)
+      err "Unsupported package manager for Python utilities: $PKG"
+      ;;
+  esac
+
+  if ! command -v python3 >/dev/null || ! command -v pip3 >/dev/null; then
+    err "Python3 or pip3 installation failed."
+  fi
+
+  log "✅ Python, pip3, and venv are installed."
+}
+
+# ──────────────────────────────────────────────────────────────────────────────
 # MAIN EXECUTION
 # ──────────────────────────────────────────────────────────────────────────────
 log "🔍 Detecting system..."
@@ -105,5 +129,8 @@ update_system
 
 log "🐙 Checking Git installation..."
 install_or_update_git
+
+log "🐍 Ensuring Python and pip are installed..."
+install_python_utils
 
 log "✅ Update script completed successfully."
